@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - Datagram Control Panel</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: #0d1117;
+            color: #e6edf3;
+            line-height: 1.6;
+        }
+        
+        /* Minimalistic Line Icons */
+        .icon-admin::before { content: '⚙'; color: #a371f7; font-size: 18px; }
+        .icon-users::before { content: '👥'; }
+        .icon-host::before { content: '◫'; color: #8b949e; }
+        .icon-add::before { content: '+'; color: #3fb950; font-weight: bold; }
+        .icon-remove::before { content: '×'; color: #f85149; font-weight: bold; }
+        .icon-stats::before { content: '◉'; color: #58a6ff; }
+        
+        .header {
+            background: #161b22;
+            border-bottom: 1px solid #30363d;
+            padding: 16px 0;
+        }
+        
+        .header-content {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 0 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header-title { font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+        .header-title::before { content: '⚙'; color: #a371f7; font-size: 30px; }
+        .header-user { font-size: 14px; color: #8b949e; display: flex; gap: 12px; align-items: center; }
+        .header-user a { color: #2f81f7; text-decoration: none; }
+        .header-user a:hover { text-decoration: underline; }
+        
+        .container { max-width: 1280px; margin: 0 auto; padding: 24px 16px; }
+        
+        .alert {
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 16px;
+            border: 1px solid;
+        }
+        .alert-success { background: #1f2d1f; border-color: #238636; color: #3fb950; }
+        .alert-error { background: #2d1b1e; border-color: #da3633; color: #f85149; }
+        
+        .card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            margin-bottom: 16px;
+        }
+        
+        .card-header {
+            padding: 16px;
+            border-bottom: 1px solid #30363d;
+            font-size: 16px;
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .card-body { padding: 16px; }
+        
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; margin-bottom: 6px; font-size: 14px; font-weight: 500; }
+        
+        select, input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 8px 12px;
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            color: #e6edf3;
+            font-size: 14px;
+            font-family: inherit;
+        }
+        
+        select:focus, input:focus {
+            outline: none;
+            border-color: #2f81f7;
+        }
+        
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            display: inline-block;
+            text-decoration: none;
+        }
+        
+        .btn-primary { background: #238636; color: #fff; }
+        .btn-primary:hover { background: #2ea043; }
+        .btn-secondary { background: #21262d; color: #e6edf3; border: 1px solid #30363d; }
+        .btn-secondary:hover { background: #30363d; }
+        .btn-danger { background: #da3633; color: #fff; }
+        .btn-danger:hover { background: #f85149; }
+        .btn-sm { padding: 4px 12px; font-size: 12px; }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #30363d;
+        }
+        
+        th {
+            font-weight: 600;
+            color: #8b949e;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+        
+        tr:hover { background: #0d1117; }
+        
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .badge-admin { background: #3d2e00; color: #f0b72f; }
+        .badge-editor { background: #1f2d3d; color: #58a6ff; }
+        .badge-viewer { background: #2d1b1e; color: #f85149; }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 16px;
+        }
+        
+        .host-card {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 16px;
+        }
+        
+        .host-card h3 { margin-bottom: 8px; font-size: 16px; }
+        .host-card p { font-size: 13px; color: #8b949e; margin-bottom: 4px; }
+        .host-card .btn-group { display: flex; gap: 8px; margin-top: 12px; }
+        
+        .help-text {
+            font-size: 12px;
+            color: #8b949e;
+            margin-top: 4px;
+        }
+        
+        code {
+            background: #0d1117;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }
+        .modal.active { display: flex; }
+        .modal-content { background: #161b22; border: 1px solid #30363d; border-radius: 6px; max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto; }
+        .modal-header { padding: 16px; border-bottom: 1px solid #30363d; font-weight: 600; }
+        .modal-body { padding: 16px; }
+        .modal-footer { padding: 16px; border-top: 1px solid #30363d; display: flex; gap: 8px; justify-content: flex-end; }
+        
+        .empty-state {
+            text-align: center;
+            padding: 48px 16px;
+            color: #8b949e;
+        }
+        
+        /* Responsive Design for Mobile */
+        @media (max-width: 768px) {
+            .header-content {
+                flex-direction: column;
+                gap: 12px;
+                align-items: flex-start;
+            }
+            
+            .header-title {
+                font-size: 16px;
+            }
+            
+            .header-title::before {
+                font-size: 24px;
+            }
+            
+            .header-user {
+                flex-wrap: wrap;
+                font-size: 13px;
+                gap: 8px;
+            }
+            
+            .container {
+                padding: 12px 8px;
+            }
+            
+            .card-header {
+                flex-direction: column;
+                gap: 12px;
+                align-items: flex-start;
+            }
+            
+            .card-body {
+                padding: 12px;
+            }
+            
+            table {
+                font-size: 12px;
+                display: block;
+                overflow-x: auto;
+                white-space: nowrap;
+            }
+            
+            th, td {
+                padding: 8px 4px;
+            }
+            
+            .btn-sm {
+                padding: 6px 8px;
+                font-size: 11px;
+            }
+            
+            .modal-content {
+                width: 95%;
+                max-height: 80vh;
+            }
+            
+            .grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .host-card .btn-group {
+                flex-direction: column;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .header-title {
+                font-size: 14px;
+            }
+            
+            .header-title::before {
+                font-size: 20px;
+            }
+            
+            table {
+                font-size: 11px;
+            }
+            
+            th, td {
+                padding: 6px 2px;
+            }
+            
+            .btn {
+                padding: 6px 12px;
+                font-size: 12px;
+            }
+            
+            .btn-sm {
+                padding: 4px 6px;
+                font-size: 10px;
+            }
+            
+            .badge {
+                font-size: 10px;
+                padding: 1px 6px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-content">
+            <div class="header-title">
+                Admin Panel
+            </div>
+            <div class="header-user">
+                <span>👤 {{ current_user.username }}</span>
+                <span>|</span>
+                <a href="{{ url_for('index') }}">← Back to Dashboard</a>
+                <a href="{{ url_for('logout') }}">Logout</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div id="alerts"></div>
+
+        <!-- User Management -->
+        <div class="card">
+            <div class="card-header">
+                <span class="icon-users"></span> User Management
+                <button onclick="showAddUserModal()" class="btn btn-primary btn-sm"><span class="icon-add"></span> Add User</button>
+            </div>
+            <div class="card-body">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Username</th>
+                            <th>Role</th>
+                            <th>Password Changed</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="users-list">
+                        {% for user in users %}
+                        <tr>
+                            <td>{{ user.id }}</td>
+                            <td>{{ user.username }}</td>
+                            <td>
+                                <span class="badge badge-{{ user.role }}">{{ user.role }}</span>
+                            </td>
+                            <td>{{ '✓' if user.password_changed else '✗' }}</td>
+                            <td>
+                                {% if user.id != current_user.id %}
+                                <button onclick="deleteUser({{ user.id }})" class="btn btn-danger btn-sm"><span class="icon-remove"></span> Delete</button>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Docker Hosts -->
+        <div class="card">
+            <div class="card-header">
+                <span class="icon-host"></span> Docker Hosts
+                <button onclick="showAddHostModal()" class="btn btn-primary btn-sm"><span class="icon-add"></span> Add Host</button>
+            </div>
+            <div class="card-body">
+                <div class="grid">
+                    {% for host in hosts %}
+                    <div class="host-card">
+                        <h3>{{ host.name }}</h3>
+                        <p><strong>URL:</strong> <code>{{ host.url }}</code></p>
+                        {% if host.description %}
+                        <p><strong>Description:</strong> {{ host.description }}</p>
+                        {% endif %}
+                        <p style="font-size: 11px; margin-top: 8px;">Added: {{ host.added_at[:19] }}</p>
+                        <div class="btn-group">
+                            <button onclick="showHostStats({{ host.id }})" class="btn btn-secondary btn-sm"><span class="icon-stats"></span> Stats</button>
+                            <button onclick="removeHost({{ host.id }})" class="btn btn-danger btn-sm"><span class="icon-remove"></span> Remove</button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                    {% if hosts|length == 0 %}
+                    <div class="empty-state" style="grid-column: 1/-1;">No hosts configured. Add one to get started.</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add User Modal -->
+    <div id="add-user-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">Add User</div>
+            <form id="add-user-form">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="user-username">Username</label>
+                        <input type="text" id="user-username" placeholder="Enter username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="user-password">Password</label>
+                        <input type="password" id="user-password" placeholder="Enter password" minlength="6" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="user-role">Role</label>
+                        <select id="user-role" required>
+                            <option value="viewer">Viewer (View only)</option>
+                            <option value="editor">Editor (View & edit containers)</option>
+                            <option value="admin">Admin (Full access)</option>
+                        </select>
+                        <div class="help-text">
+                            <strong>Viewer:</strong> Can only view containers<br>
+                            <strong>Editor:</strong> Can view and manage containers<br>
+                            <strong>Admin:</strong> Full access including user and host management
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" onclick="closeAddUserModal()" class="btn btn-secondary">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add User</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add Host Modal -->
+    <div id="add-host-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">Add Docker Host</div>
+            <form id="add-host-form">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="host-name">Name</label>
+                        <input type="text" id="host-name" placeholder="e.g., Production Server" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="host-url">URL</label>
+                        <input type="text" id="host-url" placeholder="e.g., tcp://192.168.1.100:2375 or 'local'" required>
+                        <div class="help-text">Use 'local' for local Docker or tcp://host:port for remote</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="host-description">Description (optional)</label>
+                        <input type="text" id="host-description" placeholder="Description of this host">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" onclick="closeAddHostModal()" class="btn btn-secondary">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Host</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Host Stats Modal -->
+    <div id="stats-modal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header"><span class="icon-stats"></span> Host Statistics</div>
+            <div class="modal-body">
+                <div id="stats-loading" style="text-align: center; padding: 24px; color: #8b949e;">Loading statistics...</div>
+                <div id="stats-content" style="display: none;">
+                    <div style="margin-bottom: 16px;">
+                        <h3 style="font-size: 14px; color: #8b949e; margin-bottom: 8px; text-transform: uppercase;">System Info</h3>
+                        <p style="margin-bottom: 4px;"><strong>Docker Version:</strong> <span id="stat-docker-version"></span></p>
+                        <p style="margin-bottom: 4px;"><strong>OS:</strong> <span id="stat-os"></span></p>
+                        <p style="margin-bottom: 4px;"><strong>Architecture:</strong> <span id="stat-arch"></span></p>
+                    </div>
+                    
+                    <div style="margin-bottom: 16px;">
+                        <h3 style="font-size: 14px; color: #8b949e; margin-bottom: 8px; text-transform: uppercase;">CPU</h3>
+                        <p><strong>Cores:</strong> <span id="stat-cpu-cores"></span></p>
+                    </div>
+                    
+                    <div style="margin-bottom: 16px;">
+                        <h3 style="font-size: 14px; color: #8b949e; margin-bottom: 8px; text-transform: uppercase;">Memory (RAM)</h3>
+                        <p><strong>Total:</strong> <span id="stat-mem-total"></span> GB</p>
+                    </div>
+                    
+                    <div style="margin-bottom: 16px;">
+                        <h3 style="font-size: 14px; color: #8b949e; margin-bottom: 8px; text-transform: uppercase;">Disk Usage</h3>
+                        <p><strong>Used by Docker:</strong> <span id="stat-disk-used"></span> GB</p>
+                    </div>
+                    
+                    <div>
+                        <h3 style="font-size: 14px; color: #8b949e; margin-bottom: 8px; text-transform: uppercase;">Containers</h3>
+                        <p style="margin-bottom: 4px;"><strong>Total:</strong> <span id="stat-containers-total"></span></p>
+                        <p style="margin-bottom: 4px;"><strong>Running:</strong> <span id="stat-containers-running" style="color: #3fb950;"></span></p>
+                        <p style="margin-bottom: 4px;"><strong>Stopped:</strong> <span id="stat-containers-stopped" style="color: #f85149;"></span></p>
+                        <p style="margin-bottom: 4px;"><strong>Paused:</strong> <span id="stat-containers-paused" style="color: #f0b72f;"></span></p>
+                    </div>
+                    
+                    <div style="margin-top: 16px;">
+                        <h3 style="font-size: 14px; color: #8b949e; margin-bottom: 8px; text-transform: uppercase;">Images</h3>
+                        <p><strong>Total Images:</strong> <span id="stat-images"></span></p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button onclick="closeStatsModal()" class="btn btn-secondary">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('add-user-form').addEventListener('submit', function(e) {
+                e.preventDefault();
+                addUser();
+            });
+            
+            document.getElementById('add-host-form').addEventListener('submit', function(e) {
+                e.preventDefault();
+                addHost();
+            });
+        });
+        
+        function showAlert(message, type) {
+            const alertsDiv = document.getElementById('alerts');
+            const alert = document.createElement('div');
+            alert.className = 'alert alert-' + type;
+            alert.textContent = message;
+            alertsDiv.appendChild(alert);
+            setTimeout(() => alert.remove(), 5000);
+        }
+        
+        // User Management Functions
+        function showAddUserModal() {
+            document.getElementById('add-user-modal').classList.add('active');
+        }
+        
+        function closeAddUserModal() {
+            document.getElementById('add-user-modal').classList.remove('active');
+            document.getElementById('add-user-form').reset();
+        }
+        
+        async function addUser() {
+            const username = document.getElementById('user-username').value;
+            const password = document.getElementById('user-password').value;
+            const role = document.getElementById('user-role').value;
+            
+            try {
+                const response = await fetch('/api/users', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ username, password, role })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showAlert('User created successfully!', 'success');
+                    closeAddUserModal();
+                    location.reload();
+                } else {
+                    showAlert('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error creating user: ' + error.message, 'error');
+            }
+        }
+        
+        async function deleteUser(userId) {
+            if (!confirm('Delete this user? This action cannot be undone.')) return;
+            
+            try {
+                const response = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showAlert('User deleted', 'success');
+                    location.reload();
+                } else {
+                    showAlert('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error: ' + error.message, 'error');
+            }
+        }
+        
+        // Host Management Functions
+        function showAddHostModal() {
+            document.getElementById('add-host-modal').classList.add('active');
+        }
+        
+        function closeAddHostModal() {
+            document.getElementById('add-host-modal').classList.remove('active');
+            document.getElementById('add-host-form').reset();
+        }
+        
+        async function addHost() {
+            const name = document.getElementById('host-name').value;
+            const url = document.getElementById('host-url').value;
+            const description = document.getElementById('host-description').value;
+            
+            try {
+                const response = await fetch('/api/hosts', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ name, url, description })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showAlert('Host added successfully!', 'success');
+                    closeAddHostModal();
+                    location.reload();
+                } else {
+                    showAlert('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error adding host: ' + error.message, 'error');
+            }
+        }
+        
+        async function removeHost(hostId) {
+            if (!confirm('Remove this Docker host? This will not affect running containers.')) return;
+            
+            try {
+                const response = await fetch(`/api/hosts/${hostId}`, { method: 'DELETE' });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showAlert('Host removed', 'success');
+                    location.reload();
+                } else {
+                    showAlert('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error: ' + error.message, 'error');
+            }
+        }
+        
+        async function showHostStats(hostId) {
+            const modal = document.getElementById('stats-modal');
+            const loading = document.getElementById('stats-loading');
+            const content = document.getElementById('stats-content');
+            
+            loading.style.display = 'block';
+            content.style.display = 'none';
+            modal.classList.add('active');
+            
+            try {
+                const response = await fetch(`/api/hosts/${hostId}/stats`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    const stats = data.stats;
+                    
+                    document.getElementById('stat-docker-version').textContent = stats.docker_version;
+                    document.getElementById('stat-os').textContent = stats.os;
+                    document.getElementById('stat-arch').textContent = stats.architecture;
+                    document.getElementById('stat-cpu-cores').textContent = stats.cpu.cores;
+                    document.getElementById('stat-mem-total').textContent = stats.memory.total_gb;
+                    document.getElementById('stat-disk-used').textContent = stats.disk ? stats.disk.used_gb : 'N/A';
+                    document.getElementById('stat-containers-total').textContent = stats.containers.total;
+                    document.getElementById('stat-containers-running').textContent = stats.containers.running;
+                    document.getElementById('stat-containers-stopped').textContent = stats.containers.stopped;
+                    document.getElementById('stat-containers-paused').textContent = stats.containers.paused;
+                    document.getElementById('stat-images').textContent = stats.images;
+                    
+                    loading.style.display = 'none';
+                    content.style.display = 'block';
+                } else {
+                    loading.innerHTML = '<div style="color: #f85149;">Error loading stats: ' + data.error + '</div>';
+                }
+            } catch (error) {
+                loading.innerHTML = '<div style="color: #f85149;">Error loading stats: ' + error.message + '</div>';
+            }
+        }
+        
+        function closeStatsModal() {
+            document.getElementById('stats-modal').classList.remove('active');
+        }
+        
+        window.onclick = function(event) {
+            const userModal = document.getElementById('add-user-modal');
+            const hostModal = document.getElementById('add-host-modal');
+            const statsModal = document.getElementById('stats-modal');
+            if (event.target === userModal) closeAddUserModal();
+            if (event.target === hostModal) closeAddHostModal();
+            if (event.target === statsModal) closeStatsModal();
+        }
+    </script>
+</body>
+</html>

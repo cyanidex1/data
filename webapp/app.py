@@ -4,13 +4,18 @@ Docker Control Panel for Datagram Nodes
 Web application for managing Docker containers across multiple hosts
 """
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session, make_response
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 import docker
 import json
 import os
-from datetime import datetime
+import re
+import threading
+import time
+from datetime import datetime, timedelta
+from io import StringIO
+import csv
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
@@ -22,21 +27,34 @@ login_manager.login_view = 'login'
 login_manager.login_message = 'Please log in to access the control panel.'
 
 # Store Docker hosts configuration
-HOSTS_FILE = '/data/docker_hosts.json'
-USERS_FILE = '/data/users.json'
+DATA_DIR = os.environ.get('DATA_DIR', '/data')
+HOSTS_FILE = os.path.join(DATA_DIR, 'docker_hosts.json')
+USERS_FILE = os.path.join(DATA_DIR, 'users.json')
 DEFAULT_IMAGE = 'datagram'
 
 
 class User(UserMixin):
     """User model for authentication"""
     
-    def __init__(self, id, username, password_hash):
+    def __init__(self, id, username, password_hash, password_changed=False, role='admin', theme='dark'):
         self.id = id
         self.username = username
         self.password_hash = password_hash
+        self.password_changed = password_changed
+        self.role = role  # 'viewer', 'editor', 'admin'
+        self.theme = theme  # User's theme preference
     
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+    
+    def can_view(self):
+        return self.role in ['viewer', 'editor', 'admin']
+    
+    def can_edit(self):
+        return self.role in ['editor', 'admin']
+    
+    def is_admin(self):
+        return self.role == 'admin'
 
 
 class UserManager:
@@ -50,7 +68,7 @@ class UserManager:
         if not self.users:
             default_username = os.environ.get('ADMIN_USERNAME', 'admin')
             default_password = os.environ.get('ADMIN_PASSWORD', 'admin')
-            self.add_user(default_username, default_password)
+            self.add_user(default_username, default_password, password_changed=False, role='admin')
             print(f"[*] Created default admin user: {default_username} / {default_password}")
             print("[!] IMPORTANT: Change the default password immediately!")
     
@@ -60,7 +78,14 @@ class UserManager:
             try:
                 with open(self.users_file, 'r') as f:
                     data = json.load(f)
-                    return {u['id']: User(u['id'], u['username'], u['password_hash']) for u in data}
+                    return {u['id']: User(
+                        u['id'], 
+                        u['username'], 
+                        u['password_hash'], 
+                        u.get('password_changed', False),
+                        u.get('role', 'admin'),
+                        u.get('theme', 'dark')
+                    ) for u in data}
             except Exception as e:
                 print(f"Error loading users: {e}")
                 return {}
@@ -69,16 +94,22 @@ class UserManager:
     def save_users(self):
         """Save users to configuration file"""
         os.makedirs(os.path.dirname(self.users_file), exist_ok=True)
-        data = [{'id': user.id, 'username': user.username, 'password_hash': user.password_hash} 
-                for user in self.users.values()]
+        data = [{
+            'id': user.id, 
+            'username': user.username, 
+            'password_hash': user.password_hash, 
+            'password_changed': user.password_changed,
+            'role': user.role,
+            'theme': user.theme
+        } for user in self.users.values()]
         with open(self.users_file, 'w') as f:
             json.dump(data, f, indent=2)
     
-    def add_user(self, username, password):
+    def add_user(self, username, password, password_changed=False, role='viewer'):
         """Add a new user"""
         user_id = len(self.users) + 1
         password_hash = generate_password_hash(password)
-        user = User(user_id, username, password_hash)
+        user = User(user_id, username, password_hash, password_changed, role)
         self.users[user_id] = user
         self.save_users()
         return user
@@ -99,6 +130,24 @@ class UserManager:
         user = self.users.get(user_id)
         if user:
             user.password_hash = generate_password_hash(new_password)
+            user.password_changed = True
+            self.save_users()
+            return True
+        return False
+    
+    def delete_user(self, user_id):
+        """Delete a user"""
+        if user_id in self.users:
+            del self.users[user_id]
+            self.save_users()
+            return True
+        return False
+    
+    def update_theme(self, user_id, theme):
+        """Update user theme preference"""
+        user = self.users.get(user_id)
+        if user:
+            user.theme = theme
             self.save_users()
             return True
         return False
@@ -197,6 +246,9 @@ def login():
     if current_user.is_authenticated:
         return redirect(url_for('index'))
     
+    # Check if there are any users with changed passwords
+    show_default_creds = all(not user.password_changed for user in user_manager.users.values())
+    
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
@@ -205,12 +257,18 @@ def login():
         
         if user and user.check_password(password):
             login_user(user)
+            
+            # If user hasn't changed password from default, force password change
+            if not user.password_changed:
+                flash('Please change your password from the default.', 'error')
+                return redirect(url_for('change_password', force=True))
+            
             next_page = request.args.get('next')
             return redirect(next_page if next_page else url_for('index'))
         else:
             flash('Invalid username or password', 'error')
     
-    return render_template('login.html')
+    return render_template('login.html', show_default_creds=show_default_creds)
 
 
 @app.route('/logout')
@@ -226,6 +284,8 @@ def logout():
 @login_required
 def change_password():
     """Change password page"""
+    force = request.args.get('force', 'false').lower() == 'true'
+    
     if request.method == 'POST':
         current_password = request.form.get('current_password')
         new_password = request.form.get('new_password')
@@ -242,27 +302,132 @@ def change_password():
             flash('Password changed successfully', 'success')
             return redirect(url_for('index'))
     
-    return render_template('change_password.html')
+    return render_template('change_password.html', force=force)
+
+
+@app.route('/admin')
+@login_required
+def admin_panel():
+    """Admin panel page - only accessible to admins"""
+    if not current_user.is_admin():
+        flash('Access denied. Admin privileges required.', 'error')
+        return redirect(url_for('index'))
+    return render_template('admin.html', 
+                         hosts=host_manager.hosts, 
+                         users=list(user_manager.users.values()))
+
+
+@app.route('/api/users', methods=['GET'])
+@login_required
+def list_users():
+    """List all users - admin only"""
+    if not current_user.is_admin():
+        return jsonify({'error': 'Admin privileges required'}), 403
+    
+    users_list = [{
+        'id': user.id,
+        'username': user.username,
+        'role': user.role,
+        'password_changed': user.password_changed
+    } for user in user_manager.users.values()]
+    
+    return jsonify({'users': users_list})
+
+
+@app.route('/api/users', methods=['POST'])
+@login_required
+def create_user():
+    """Create a new user - admin only"""
+    if not current_user.is_admin():
+        return jsonify({'error': 'Admin privileges required'}), 403
+    
+    data = request.json
+    username = data.get('username')
+    password = data.get('password')
+    role = data.get('role', 'viewer')
+    
+    if not username or not password:
+        return jsonify({'error': 'Username and password are required'}), 400
+    
+    if role not in ['viewer', 'editor', 'admin']:
+        return jsonify({'error': 'Invalid role. Must be viewer, editor, or admin'}), 400
+    
+    # Check if username already exists
+    if user_manager.get_user_by_username(username):
+        return jsonify({'error': 'Username already exists'}), 400
+    
+    user = user_manager.add_user(username, password, password_changed=True, role=role)
+    return jsonify({
+        'success': True,
+        'user': {
+            'id': user.id,
+            'username': user.username,
+            'role': user.role
+        }
+    })
+
+
+@app.route('/api/users/<int:user_id>', methods=['DELETE'])
+@login_required
+def delete_user(user_id):
+    """Delete a user - admin only"""
+    if not current_user.is_admin():
+        return jsonify({'error': 'Admin privileges required'}), 403
+    
+    # Prevent deleting yourself
+    if user_id == current_user.id:
+        return jsonify({'error': 'Cannot delete your own account'}), 400
+    
+    if user_manager.delete_user(user_id):
+        return jsonify({'success': True})
+    return jsonify({'error': 'User not found'}), 404
+
+
+@app.route('/api/theme', methods=['POST'])
+@login_required
+def update_theme():
+    """Update user theme preference"""
+    data = request.json
+    theme = data.get('theme')
+    
+    if not theme:
+        return jsonify({'error': 'Theme is required'}), 400
+    
+    if user_manager.update_theme(current_user.id, theme):
+        # Reload the user to get updated theme
+        current_user.theme = theme
+        return jsonify({'success': True, 'theme': theme})
+    return jsonify({'error': 'Failed to update theme'}), 500
 
 
 @app.route('/')
 @login_required
 def index():
     """Main dashboard page"""
-    return render_template('index.html', hosts=host_manager.hosts)
+    # Pass user role information to template
+    return render_template('index.html', 
+                         can_edit=current_user.can_edit(),
+                         can_view=current_user.can_view(),
+                         is_admin=current_user.is_admin())
 
 
 @app.route('/api/hosts', methods=['GET'])
 @login_required
 def list_hosts():
-    """List all Docker hosts"""
+    """List all Docker hosts - admin only"""
+    if not current_user.is_admin():
+        return jsonify({'error': 'Admin privileges required'}), 403
+    
     return jsonify({'hosts': host_manager.hosts})
 
 
 @app.route('/api/hosts', methods=['POST'])
 @login_required
 def add_host():
-    """Add a new Docker host"""
+    """Add a new Docker host - admin only"""
+    if not current_user.is_admin():
+        return jsonify({'error': 'Admin privileges required'}), 403
+    
     data = request.json
     name = data.get('name')
     url = data.get('url')
@@ -278,7 +443,10 @@ def add_host():
 @app.route('/api/hosts/<int:host_id>', methods=['DELETE'])
 @login_required
 def remove_host(host_id):
-    """Remove a Docker host"""
+    """Remove a Docker host - admin only"""
+    if not current_user.is_admin():
+        return jsonify({'error': 'Admin privileges required'}), 403
+    
     host_manager.remove_host(host_id)
     return jsonify({'success': True})
 
@@ -286,7 +454,10 @@ def remove_host(host_id):
 @app.route('/api/containers', methods=['GET'])
 @login_required
 def list_containers():
-    """List all containers across all hosts"""
+    """List all containers across all hosts - requires view permission"""
+    if not current_user.can_view():
+        return jsonify({'error': 'View privileges required'}), 403
+    
     all_containers = []
     
     for host in host_manager.hosts:
@@ -300,20 +471,33 @@ def list_containers():
                 # Get environment variables to extract the key
                 env_vars = container.attrs.get('Config', {}).get('Env', [])
                 datagram_key = None
+                expiration_date = None
                 for env in env_vars:
                     if env.startswith('DATAGRAM_KEY='):
                         datagram_key = env.split('=', 1)[1]
-                        break
+                    elif env.startswith('EXPIRATION_DATE='):
+                        expiration_date = env.split('=', 1)[1]
+                
+                # Determine container status
+                status = container.status
+                if expiration_date:
+                    try:
+                        exp_dt = datetime.fromisoformat(expiration_date)
+                        if datetime.now() > exp_dt:
+                            status = 'expired'
+                    except:
+                        pass
                 
                 all_containers.append({
                     'host_id': host['id'],
                     'host_name': host['name'],
                     'id': container.id[:12],
                     'name': container.name,
-                    'status': container.status,
+                    'status': status,
                     'image': container.image.tags[0] if container.image.tags else container.image.id[:12],
                     'created': container.attrs['Created'],
-                    'key': datagram_key
+                    'key': datagram_key,
+                    'expiration_date': expiration_date
                 })
         except Exception as e:
             print(f"Error listing containers on host {host['name']}: {e}")
@@ -324,13 +508,21 @@ def list_containers():
 @app.route('/api/containers/start', methods=['POST'])
 @login_required
 def start_container():
-    """Start a new container with a given key"""
+    """Start a new container with a given key - requires edit permission"""
+    if not current_user.can_edit():
+        return jsonify({'error': 'Edit privileges required'}), 403
+    
     data = request.json
     host_id = data.get('host_id')
     key = data.get('key')
+    expiration_date = data.get('expiration_date')  # Optional expiration date
     
+    # Validate key format: 32 characters, only 0-9 and a-z
     if not key or len(key) != 32:
-        return jsonify({'error': 'Invalid key. Must be 32 characters'}), 400
+        return jsonify({'error': 'Invalid key. Must be exactly 32 characters'}), 400
+    
+    if not re.match(r'^[0-9a-z]{32}$', key):
+        return jsonify({'error': 'Invalid key. Must contain only numbers (0-9) and lowercase letters (a-z)'}), 400
     
     if host_id is None:
         return jsonify({'error': 'Host ID is required'}), 400
@@ -343,10 +535,19 @@ def start_container():
         # Use the key as the container name
         container_name = key
         
-        # Check if container with this name already exists
-        existing_containers = client.containers.list(all=True)
-        if any(c.name == container_name for c in existing_containers):
-            return jsonify({'error': f'Container with key "{key}" already exists'}), 400
+        # Check if container with this key already exists across all hosts
+        for host in host_manager.hosts:
+            check_client = host_manager.get_client(host['id'])
+            if check_client:
+                try:
+                    existing_containers = check_client.containers.list(all=True)
+                    for c in existing_containers:
+                        env_vars = c.attrs.get('Config', {}).get('Env', [])
+                        for env in env_vars:
+                            if env.startswith('DATAGRAM_KEY=') and env.split('=', 1)[1] == key:
+                                return jsonify({'error': f'Container with key "{key}" already exists on host "{host["name"]}"'}), 400
+                except:
+                    pass
         
         # Check if image exists, if not return error (user should build it on the host)
         try:
@@ -354,11 +555,21 @@ def start_container():
         except docker.errors.ImageNotFound:
             return jsonify({'error': f'Image "{DEFAULT_IMAGE}" not found on host. Please build it first.'}), 400
         
+        # Prepare environment variables
+        env_vars = {'DATAGRAM_KEY': key}
+        if expiration_date:
+            # Validate and store expiration date
+            try:
+                exp_dt = datetime.fromisoformat(expiration_date)
+                env_vars['EXPIRATION_DATE'] = expiration_date
+            except:
+                return jsonify({'error': 'Invalid expiration date format. Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)'}), 400
+        
         # Start the container
         container = client.containers.run(
             DEFAULT_IMAGE,
             name=container_name,
-            environment={'DATAGRAM_KEY': key},
+            environment=env_vars,
             platform='linux/amd64',
             detach=True,
             restart_policy={'Name': 'unless-stopped'},
@@ -379,7 +590,9 @@ def start_container():
 @app.route('/api/containers/<host_id>/<container_id>/start', methods=['POST'])
 @login_required
 def start_existing_container(host_id, container_id):
-    """Start an existing container"""
+    """Start an existing container - requires edit permission"""
+    if not current_user.can_edit():
+        return jsonify({'error': 'Edit privileges required'}), 403
     try:
         client = host_manager.get_client(int(host_id))
         if not client:
@@ -395,7 +608,9 @@ def start_existing_container(host_id, container_id):
 @app.route('/api/containers/<host_id>/<container_id>/stop', methods=['POST'])
 @login_required
 def stop_container(host_id, container_id):
-    """Stop a running container"""
+    """Stop a running container - requires edit permission"""
+    if not current_user.can_edit():
+        return jsonify({'error': 'Edit privileges required'}), 403
     try:
         client = host_manager.get_client(int(host_id))
         if not client:
@@ -411,7 +626,9 @@ def stop_container(host_id, container_id):
 @app.route('/api/containers/<host_id>/<container_id>/restart', methods=['POST'])
 @login_required
 def restart_container(host_id, container_id):
-    """Restart a container"""
+    """Restart a container - requires edit permission"""
+    if not current_user.can_edit():
+        return jsonify({'error': 'Edit privileges required'}), 403
     try:
         client = host_manager.get_client(int(host_id))
         if not client:
@@ -427,7 +644,9 @@ def restart_container(host_id, container_id):
 @app.route('/api/containers/<host_id>/<container_id>/kill', methods=['POST'])
 @login_required
 def kill_container(host_id, container_id):
-    """Kill a running container"""
+    """Kill a running container - requires edit permission"""
+    if not current_user.can_edit():
+        return jsonify({'error': 'Edit privileges required'}), 403
     try:
         client = host_manager.get_client(int(host_id))
         if not client:
@@ -443,7 +662,9 @@ def kill_container(host_id, container_id):
 @app.route('/api/containers/<host_id>/<container_id>/remove', methods=['DELETE'])
 @login_required
 def remove_container(host_id, container_id):
-    """Remove a container"""
+    """Remove a container - requires edit permission"""
+    if not current_user.can_edit():
+        return jsonify({'error': 'Edit privileges required'}), 403
     try:
         client = host_manager.get_client(int(host_id))
         if not client:
@@ -459,7 +680,10 @@ def remove_container(host_id, container_id):
 @app.route('/api/containers/<host_id>/<container_id>/logs', methods=['GET'])
 @login_required
 def get_container_logs(host_id, container_id):
-    """Get container logs"""
+    """Get container logs - requires view permission"""
+    if not current_user.can_view():
+        return jsonify({'error': 'View privileges required'}), 403
+    
     try:
         client = host_manager.get_client(int(host_id))
         if not client:
@@ -472,12 +696,184 @@ def get_container_logs(host_id, container_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/containers/export-keys', methods=['GET'])
+@login_required
+def export_keys():
+    """Export all container keys to CSV - requires view permission"""
+    if not current_user.can_view():
+        return jsonify({'error': 'View privileges required'}), 403
+    
+    try:
+        # Collect all keys from all hosts
+        all_keys = []
+        
+        for host in host_manager.hosts:
+            client = host_manager.get_client(host['id'])
+            if not client:
+                continue
+            
+            try:
+                containers = client.containers.list(all=True)
+                for container in containers:
+                    env_vars = container.attrs.get('Config', {}).get('Env', [])
+                    datagram_key = None
+                    expiration_date = None
+                    
+                    for env in env_vars:
+                        if env.startswith('DATAGRAM_KEY='):
+                            datagram_key = env.split('=', 1)[1]
+                        elif env.startswith('EXPIRATION_DATE='):
+                            expiration_date = env.split('=', 1)[1]
+                    
+                    if datagram_key:
+                        all_keys.append({
+                            'host': host['name'],
+                            'container': container.name,
+                            'key': datagram_key,
+                            'status': container.status,
+                            'expiration': expiration_date or 'N/A'
+                        })
+            except Exception as e:
+                print(f"Error getting keys from host {host['name']}: {e}")
+        
+        # Create CSV
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['Host', 'Container', 'Key', 'Status', 'Expiration'])
+        
+        for item in all_keys:
+            writer.writerow([item['host'], item['container'], item['key'], item['status'], item['expiration']])
+        
+        # Create response
+        response = make_response(output.getvalue())
+        response.headers['Content-Type'] = 'text/csv'
+        response.headers['Content-Disposition'] = f'attachment; filename=container_keys_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        
+        return response
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/hosts/<int:host_id>/stats', methods=['GET'])
+@login_required
+def get_host_stats(host_id):
+    """Get host statistics (CPU, RAM, Disk usage)"""
+    try:
+        client = host_manager.get_client(host_id)
+        if not client:
+            return jsonify({'error': 'Could not connect to Docker host'}), 500
+        
+        # Get system info
+        info = client.info()
+        
+        # Get disk usage
+        df = client.df()
+        
+        # Calculate stats
+        stats = {
+            'cpu': {
+                'cores': info.get('NCPU', 0),
+            },
+            'memory': {
+                'total': info.get('MemTotal', 0),
+                'total_gb': round(info.get('MemTotal', 0) / (1024**3), 2),
+                # Note: Docker info() doesn't provide current memory usage
+                # This shows total system memory available to Docker
+            },
+            'containers': {
+                'total': info.get('Containers', 0),
+                'running': info.get('ContainersRunning', 0),
+                'stopped': info.get('ContainersStopped', 0),
+                'paused': info.get('ContainersPaused', 0),
+            },
+            'images': info.get('Images', 0),
+            'docker_version': info.get('ServerVersion', 'Unknown'),
+            'os': info.get('OperatingSystem', 'Unknown'),
+            'architecture': info.get('Architecture', 'Unknown'),
+        }
+        
+        # Add disk usage if available
+        if df:
+            volumes_data = df.get('Volumes', [])
+            images_data = df.get('Images', [])
+            containers_data = df.get('Containers', [])
+            
+            total_size = 0
+            if volumes_data:
+                total_size += sum(v.get('UsageData', {}).get('Size', 0) for v in volumes_data if v.get('UsageData'))
+            if images_data:
+                total_size += sum(i.get('Size', 0) for i in images_data)
+            if containers_data:
+                total_size += sum(c.get('SizeRw', 0) for c in containers_data)
+            
+            stats['disk'] = {
+                'used_bytes': total_size,
+                'used_gb': round(total_size / (1024**3), 2),
+            }
+        
+        return jsonify({'stats': stats})
+    except Exception as e:
+        print(f"Error getting host stats: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     # Ensure data directory exists
-    os.makedirs('/data', exist_ok=True)
+    os.makedirs(DATA_DIR, exist_ok=True)
     
     # Add local host if no hosts exist
     if not host_manager.hosts:
         host_manager.add_host('Local Docker', 'local', 'Local Docker daemon via socket')
+    
+    # Start background thread to monitor expired containers
+    def monitor_expired_containers():
+        """Background thread to stop expired containers and remove old ones"""
+        while True:
+            try:
+                for host in host_manager.hosts:
+                    client = host_manager.get_client(host['id'])
+                    if not client:
+                        continue
+                    
+                    try:
+                        containers = client.containers.list(all=True)
+                        for container in containers:
+                            env_vars = container.attrs.get('Config', {}).get('Env', [])
+                            expiration_date = None
+                            
+                            for env in env_vars:
+                                if env.startswith('EXPIRATION_DATE='):
+                                    expiration_date = env.split('=', 1)[1]
+                                    break
+                            
+                            if expiration_date:
+                                try:
+                                    exp_dt = datetime.fromisoformat(expiration_date)
+                                    now = datetime.now()
+                                    
+                                    # Stop container if expired and still running
+                                    if now > exp_dt and container.status == 'running':
+                                        print(f"Stopping expired container: {container.name}")
+                                        container.stop()
+                                    
+                                    # Remove container if expired for more than 7 days
+                                    removal_date = exp_dt + timedelta(days=7)
+                                    if now > removal_date:
+                                        print(f"Removing expired container (>7 days): {container.name}")
+                                        container.remove(force=True)
+                                except Exception as e:
+                                    print(f"Error processing expiration for {container.name}: {e}")
+                    except Exception as e:
+                        print(f"Error monitoring containers on host {host['name']}: {e}")
+            except Exception as e:
+                print(f"Error in monitor thread: {e}")
+            
+            # Check every 5 minutes
+            time.sleep(300)
+    
+    # Start monitoring thread
+    monitor_thread = threading.Thread(target=monitor_expired_containers, daemon=True)
+    monitor_thread.start()
+    print("[*] Started container expiration monitor thread")
     
     app.run(host='0.0.0.0', port=5000, debug=os.environ.get('DEBUG', 'False').lower() == 'true')

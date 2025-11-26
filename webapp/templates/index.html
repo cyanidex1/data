@@ -14,6 +14,29 @@
             line-height: 1.6;
         }
         
+        /* Minimalistic Line Icons */
+        .icon {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            position: relative;
+            vertical-align: middle;
+            margin-right: 4px;
+        }
+        
+        .icon-container::before { content: '⬡'; color: #58a6ff; }
+        .icon-host::before { content: '◫'; color: #8b949e; }
+        .icon-play::before { content: '▶'; color: #3fb950; font-size: 12px; }
+        .icon-stop::before { content: '■'; color: #f85149; font-size: 12px; }
+        .icon-restart::before { content: '↻'; color: #a371f7; }
+        .icon-refresh::before { content: '↻'; color: #8b949e; }
+        .icon-export::before { content: '↓'; color: #58a6ff; }
+        .icon-add::before { content: '+'; color: #3fb950; font-weight: bold; }
+        .icon-remove::before { content: '×'; color: #f85149; font-weight: bold; }
+        .icon-logs::before { content: '≡'; color: #8b949e; }
+        .icon-stats::before { content: '◉'; color: #58a6ff; }
+        
+        
         .header {
             background: #161b22;
             border-bottom: 1px solid #30363d;
@@ -30,9 +53,10 @@
         }
         
         .header-title { font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+        .header-title::before { content: '⬡'; color: #58a6ff; font-size: 30px; } /* Increased from 24px to 30px */
         .header-user { font-size: 14px; color: #8b949e; display: flex; gap: 12px; align-items: center; }
-        .header-user a { color: #2f81f7; text-decoration: none; }
-        .header-user a:hover { text-decoration: underline; }
+        .header-user a, .header-user .username-link { color: #2f81f7; text-decoration: none; cursor: pointer; }
+        .header-user a:hover, .header-user .username-link:hover { text-decoration: underline; }
         
         .container { max-width: 1280px; margin: 0 auto; padding: 24px 16px; }
         
@@ -133,6 +157,7 @@
         
         .status-running { background: #1f2d1f; color: #3fb950; }
         .status-exited { background: #2d1b1e; color: #f85149; }
+        .status-expired { background: #3d2e00; color: #f0b72f; }
         .status-created { background: #1f2d3d; color: #58a6ff; }
         
         .actions { display: flex; gap: 4px; flex-wrap: wrap; }
@@ -172,16 +197,150 @@
         
         .host-card h3 { margin-bottom: 8px; font-size: 16px; }
         .host-card p { font-size: 13px; color: #8b949e; margin-bottom: 4px; }
+        .host-card .btn-group { display: flex; gap: 8px; margin-top: 12px; }
+        
+        input[type="date"], input[type="datetime-local"] {
+            width: 100%;
+            padding: 8px 12px;
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            color: #e6edf3;
+            font-size: 14px;
+            font-family: inherit;
+        }
+        
+        input[type="date"]:focus, input[type="datetime-local"]:focus {
+            outline: none;
+            border-color: #2f81f7;
+        }
+        
+        /* Responsive Design for Mobile */
+        @media (max-width: 768px) {
+            .header-content {
+                flex-direction: column;
+                gap: 12px;
+                align-items: flex-start;
+            }
+            
+            .header-title {
+                font-size: 16px;
+            }
+            
+            .header-title::before {
+                font-size: 24px;
+            }
+            
+            .header-user {
+                flex-wrap: wrap;
+                font-size: 13px;
+                gap: 8px;
+            }
+            
+            .header-user select {
+                font-size: 12px;
+                padding: 2px 6px;
+            }
+            
+            .container {
+                padding: 12px 8px;
+            }
+            
+            .card-header {
+                flex-direction: column;
+                gap: 12px;
+                align-items: flex-start;
+            }
+            
+            .card-body {
+                padding: 12px;
+            }
+            
+            table {
+                font-size: 12px;
+                display: block;
+                overflow-x: auto;
+                white-space: nowrap;
+            }
+            
+            th, td {
+                padding: 8px 4px;
+            }
+            
+            .actions {
+                display: flex !important;
+                flex-direction: column !important;
+                gap: 4px !important;
+            }
+            
+            .btn-sm {
+                padding: 6px 8px;
+                font-size: 11px;
+                white-space: nowrap;
+            }
+            
+            .modal-content {
+                width: 95%;
+                max-height: 80vh;
+            }
+            
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .header-title {
+                font-size: 14px;
+            }
+            
+            .header-title::before {
+                font-size: 20px;
+            }
+            
+            table {
+                font-size: 11px;
+            }
+            
+            th, td {
+                padding: 6px 2px;
+            }
+            
+            .btn {
+                padding: 6px 12px;
+                font-size: 12px;
+            }
+            
+            .btn-sm {
+                padding: 4px 6px;
+                font-size: 10px;
+            }
+        }
     </style>
 </head>
 <body>
     <div class="header">
         <div class="header-content">
             <div class="header-title">
-                <span>🐳</span> Datagram Control Panel
+                Datagram Control Panel
             </div>
             <div class="header-user">
+                {% if current_user.is_admin() %}
+                <a href="{{ url_for('admin_panel') }}" class="username-link">👤 {{ current_user.username }}</a>
+                {% else %}
                 <span>👤 {{ current_user.username }}</span>
+                {% endif %}
+                <span>|</span>
+                <select id="theme-selector" style="padding: 4px 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; color: #e6edf3; font-size: 13px; cursor: pointer;">
+                    <option value="dark">🌙 Dark</option>
+                    <option value="light">☀️ Light</option>
+                    <option value="dracula">🧛 Dracula</option>
+                    <option value="nord">❄️ Nord</option>
+                    <option value="solarized-dark">🌊 Solarized Dark</option>
+                    <option value="solarized-light">🌅 Solarized Light</option>
+                    <option value="monokai">🎨 Monokai</option>
+                    <option value="gruvbox">🍂 Gruvbox</option>
+                </select>
                 <span>|</span>
                 <a href="{{ url_for('change_password') }}">Change Password</a>
                 <a href="{{ url_for('logout') }}">Logout</a>
@@ -193,63 +352,45 @@
         <div id="alerts"></div>
 
         <!-- Start New Container -->
+        {% if can_edit %}
         <div class="card">
-            <div class="card-header">🚀 Start New Container</div>
+            <div class="card-header"><span class="icon-container"></span> Start New Container</div>
             <div class="card-body">
                 <form id="start-form">
                     <div class="form-group">
                         <label for="host-select">Docker Host</label>
                         <select id="host-select" required>
                             <option value="">Select a host...</option>
-                            {% for host in hosts %}
-                            <option value="{{ host.id }}">{{ host.name }}</option>
-                            {% endfor %}
+                            <!-- Hosts loaded dynamically -->
                         </select>
                     </div>
                     <div class="form-group">
-                        <label for="key-input">Datagram Key (32 characters)</label>
-                        <input type="text" id="key-input" placeholder="Enter 32-character key" maxlength="32" required>
-                        <div class="help-text">The key will be used as the container name</div>
+                        <label for="key-input">Datagram Key (32 characters, 0-9 and a-z only)</label>
+                        <input type="text" id="key-input" placeholder="Enter 32-character key" maxlength="32" pattern="[0-9a-z]{32}" required>
+                        <div class="help-text">The key will be used as the container name. Only lowercase letters and numbers allowed.</div>
                     </div>
-                    <button type="submit" class="btn btn-primary">Start Container</button>
+                    <div class="form-group">
+                        <label for="expiration-input">Expiration Date (Optional)</label>
+                        <input type="datetime-local" id="expiration-input">
+                        <div class="help-text">Container will stop automatically after this date and be removed after 7 days</div>
+                    </div>
+                    <button type="submit" class="btn btn-primary"><span class="icon-play"></span> Start Container</button>
                 </form>
             </div>
         </div>
+        {% endif %}
 
         <!-- Running Containers -->
         <div class="card">
             <div class="card-header">
-                📊 Running Containers
-                <button onclick="refreshContainers()" class="btn btn-secondary btn-sm">🔄 Refresh</button>
+                <span class="icon-container"></span> Running Containers
+                <div style="display: flex; gap: 8px;">
+                    <button onclick="exportKeys()" class="btn btn-secondary btn-sm"><span class="icon-export"></span> Export Keys</button>
+                    <button onclick="refreshContainers()" class="btn btn-secondary btn-sm"><span class="icon-refresh"></span> Refresh</button>
+                </div>
             </div>
             <div id="containers-loading" style="padding: 24px; text-align: center; color: #8b949e;">Loading containers...</div>
             <div id="containers-list"></div>
-        </div>
-
-        <!-- Docker Hosts -->
-        <div class="card">
-            <div class="card-header">
-                🖥️ Docker Hosts
-                <button onclick="showAddHostModal()" class="btn btn-primary btn-sm">➕ Add Host</button>
-            </div>
-            <div class="card-body">
-                <div class="grid">
-                    {% for host in hosts %}
-                    <div class="host-card">
-                        <h3>{{ host.name }}</h3>
-                        <p><strong>URL:</strong> <code>{{ host.url }}</code></p>
-                        {% if host.description %}
-                        <p><strong>Description:</strong> {{ host.description }}</p>
-                        {% endif %}
-                        <p style="font-size: 11px; margin-top: 8px;">Added: {{ host.added_at[:19] }}</p>
-                        <button onclick="removeHost({{ host.id }})" class="btn btn-danger btn-sm" style="margin-top: 8px;">Remove</button>
-                    </div>
-                    {% endfor %}
-                    {% if hosts|length == 0 %}
-                    <div class="empty-state" style="grid-column: 1/-1;">No hosts configured. Add one to get started.</div>
-                    {% endif %}
-                </div>
-            </div>
         </div>
     </div>
 
@@ -262,34 +403,6 @@
         .modal-body { padding: 16px; }
         .modal-footer { padding: 16px; border-top: 1px solid #30363d; display: flex; gap: 8px; justify-content: flex-end; }
     </style>
-
-    <!-- Add Host Modal -->
-    <div id="add-host-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">Add Docker Host</div>
-            <form id="add-host-form">
-                <div class="modal-body">
-                    <div class="form-group">
-                        <label for="host-name">Name</label>
-                        <input type="text" id="host-name" placeholder="e.g., Production Server" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="host-url">URL</label>
-                        <input type="text" id="host-url" placeholder="e.g., tcp://192.168.1.100:2375 or 'local'" required>
-                        <div class="help-text">Use 'local' for local Docker or tcp://host:port for remote</div>
-                    </div>
-                    <div class="form-group">
-                        <label for="host-description">Description (optional)</label>
-                        <input type="text" id="host-description" placeholder="Description of this host">
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" onclick="closeAddHostModal()" class="btn btn-secondary">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Add Host</button>
-                </div>
-            </form>
-        </div>
-    </div>
 
     <!-- Logs Modal -->
     <div id="logs-modal" class="modal">
@@ -304,21 +417,100 @@
         </div>
     </div>
 
+    <!-- Host Stats Modal -->
+    <div id="stats-modal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header"><span class="icon-stats"></span> Host Statistics</div>
+            <div class="modal-body">
+                <div id="stats-loading" style="text-align: center; padding: 24px; color: #8b949e;">Loading statistics...</div>
+                <div id="stats-content" style="display: none;">
+                    <div style="margin-bottom: 16px;">
+                        <h3 style="font-size: 14px; color: #8b949e; margin-bottom: 8px; text-transform: uppercase;">System Info</h3>
+                        <p style="margin-bottom: 4px;"><strong>Docker Version:</strong> <span id="stat-docker-version"></span></p>
+                        <p style="margin-bottom: 4px;"><strong>OS:</strong> <span id="stat-os"></span></p>
+                        <p style="margin-bottom: 4px;"><strong>Architecture:</strong> <span id="stat-arch"></span></p>
+                    </div>
+                    
+                    <div style="margin-bottom: 16px;">
+                        <h3 style="font-size: 14px; color: #8b949e; margin-bottom: 8px; text-transform: uppercase;">CPU</h3>
+                        <p><strong>Cores:</strong> <span id="stat-cpu-cores"></span></p>
+                    </div>
+                    
+                    <div style="margin-bottom: 16px;">
+                        <h3 style="font-size: 14px; color: #8b949e; margin-bottom: 8px; text-transform: uppercase;">Memory (RAM)</h3>
+                        <p style="margin-bottom: 4px;"><strong>Total:</strong> <span id="stat-mem-total"></span> GB</p>
+                        <p style="margin-bottom: 4px;"><strong>Used:</strong> <span id="stat-mem-used"></span> GB</p>
+                        <div style="background: #0d1117; height: 20px; border-radius: 4px; overflow: hidden; margin-top: 8px;">
+                            <div id="stat-mem-bar" style="height: 100%; background: linear-gradient(90deg, #3fb950, #f0b72f); transition: width 0.3s;"></div>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-bottom: 16px;">
+                        <h3 style="font-size: 14px; color: #8b949e; margin-bottom: 8px; text-transform: uppercase;">Disk Usage</h3>
+                        <p><strong>Used by Docker:</strong> <span id="stat-disk-used"></span> GB</p>
+                    </div>
+                    
+                    <div>
+                        <h3 style="font-size: 14px; color: #8b949e; margin-bottom: 8px; text-transform: uppercase;">Containers</h3>
+                        <p style="margin-bottom: 4px;"><strong>Total:</strong> <span id="stat-containers-total"></span></p>
+                        <p style="margin-bottom: 4px;"><strong>Running:</strong> <span id="stat-containers-running" style="color: #3fb950;"></span></p>
+                        <p style="margin-bottom: 4px;"><strong>Stopped:</strong> <span id="stat-containers-stopped" style="color: #f85149;"></span></p>
+                        <p style="margin-bottom: 4px;"><strong>Paused:</strong> <span id="stat-containers-paused" style="color: #f0b72f;"></span></p>
+                    </div>
+                    
+                    <div style="margin-top: 16px;">
+                        <h3 style="font-size: 14px; color: #8b949e; margin-bottom: 8px; text-transform: uppercase;">Images</h3>
+                        <p><strong>Total Images:</strong> <span id="stat-images"></span></p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button onclick="closeStatsModal()" class="btn btn-secondary">Close</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let refreshInterval;
+        const canEdit = {{ 'true' if can_edit else 'false' }};
         
         document.addEventListener('DOMContentLoaded', function() {
+            loadHosts();
             refreshContainers();
             refreshInterval = setInterval(refreshContainers, 10000);
             
-            document.getElementById('start-form').addEventListener('submit', function(e) {
-                e.preventDefault();
-                startContainer();
-            });
+            if (canEdit) {
+                const startForm = document.getElementById('start-form');
+                if (startForm) {
+                    startForm.addEventListener('submit', function(e) {
+                        e.preventDefault();
+                        startContainer();
+                    });
+                }
+            }
             
-            document.getElementById('add-host-form').addEventListener('submit', function(e) {
-                e.preventDefault();
-                addHost();
+            // Initialize theme selector
+            const themeSelector = document.getElementById('theme-selector');
+            themeSelector.value = '{{ current_user.theme }}' || 'dark';
+            applyTheme(themeSelector.value);
+            
+            themeSelector.addEventListener('change', async function() {
+                const theme = this.value;
+                try {
+                    const response = await fetch('/api/theme', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ theme: theme })
+                    });
+                    if (response.ok) {
+                        applyTheme(theme);
+                        showAlert('Theme updated successfully', 'success');
+                    } else {
+                        showAlert('Failed to update theme', 'error');
+                    }
+                } catch (error) {
+                    showAlert('Error updating theme: ' + error.message, 'error');
+                }
             });
         });
         
@@ -329,6 +521,94 @@
             alert.textContent = message;
             alertsDiv.appendChild(alert);
             setTimeout(() => alert.remove(), 5000);
+        }
+        
+        async function loadHosts() {
+            if (!canEdit) return; // Only load hosts for users who can edit
+            
+            try {
+                const response = await fetch('/api/hosts');
+                if (response.status === 403) {
+                    // User doesn't have permission to view hosts
+                    return;
+                }
+                
+                const data = await response.json();
+                
+                const hostSelect = document.getElementById('host-select');
+                if (hostSelect) {
+                    hostSelect.innerHTML = '<option value="">Select a host...</option>';
+                    
+                    data.hosts.forEach(host => {
+                        const option = document.createElement('option');
+                        option.value = host.id;
+                        option.textContent = host.name;
+                        hostSelect.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading hosts:', error);
+            }
+        }
+        
+        function applyTheme(theme) {
+            const themes = {
+                'dark': {
+                    bg: '#0d1117', cardBg: '#161b22', border: '#30363d', 
+                    text: '#e6edf3', textMuted: '#8b949e', primary: '#58a6ff',
+                    success: '#3fb950', danger: '#f85149', warning: '#f0b72f'
+                },
+                'light': {
+                    bg: '#ffffff', cardBg: '#f6f8fa', border: '#d0d7de',
+                    text: '#24292f', textMuted: '#57606a', primary: '#0969da',
+                    success: '#1a7f37', danger: '#cf222e', warning: '#9a6700'
+                },
+                'dracula': {
+                    bg: '#282a36', cardBg: '#44475a', border: '#6272a4',
+                    text: '#f8f8f2', textMuted: '#6272a4', primary: '#bd93f9',
+                    success: '#50fa7b', danger: '#ff5555', warning: '#f1fa8c'
+                },
+                'nord': {
+                    bg: '#2e3440', cardBg: '#3b4252', border: '#4c566a',
+                    text: '#eceff4', textMuted: '#81a1c1', primary: '#88c0d0',
+                    success: '#a3be8c', danger: '#bf616a', warning: '#ebcb8b'
+                },
+                'solarized-dark': {
+                    bg: '#002b36', cardBg: '#073642', border: '#586e75',
+                    text: '#839496', textMuted: '#586e75', primary: '#268bd2',
+                    success: '#859900', danger: '#dc322f', warning: '#b58900'
+                },
+                'solarized-light': {
+                    bg: '#fdf6e3', cardBg: '#eee8d5', border: '#93a1a1',
+                    text: '#657b83', textMuted: '#93a1a1', primary: '#268bd2',
+                    success: '#859900', danger: '#dc322f', warning: '#b58900'
+                },
+                'monokai': {
+                    bg: '#272822', cardBg: '#3e3d32', border: '#75715e',
+                    text: '#f8f8f2', textMuted: '#75715e', primary: '#66d9ef',
+                    success: '#a6e22e', danger: '#f92672', warning: '#e6db74'
+                },
+                'gruvbox': {
+                    bg: '#282828', cardBg: '#3c3836', border: '#504945',
+                    text: '#ebdbb2', textMuted: '#a89984', primary: '#83a598',
+                    success: '#b8bb26', danger: '#fb4934', warning: '#fabd2f'
+                }
+            };
+            
+            const t = themes[theme] || themes.dark;
+            document.documentElement.style.setProperty('--bg-color', t.bg);
+            document.documentElement.style.setProperty('--card-bg-color', t.cardBg);
+            document.documentElement.style.setProperty('--border-color', t.border);
+            document.documentElement.style.setProperty('--text-color', t.text);
+            document.documentElement.style.setProperty('--text-muted-color', t.textMuted);
+            document.documentElement.style.setProperty('--primary-color', t.primary);
+            document.documentElement.style.setProperty('--success-color', t.success);
+            document.documentElement.style.setProperty('--danger-color', t.danger);
+            document.documentElement.style.setProperty('--warning-color', t.warning);
+            
+            // Apply theme to body and elements
+            document.body.style.background = t.bg;
+            document.body.style.color = t.text;
         }
         
         async function refreshContainers() {
@@ -353,6 +633,7 @@
                                     <th>Status</th>
                                     <th>Image</th>
                                     <th>Key</th>
+                                    <th>Expiration</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
@@ -364,16 +645,17 @@
                                         <td><span class="status status-${c.status}">${c.status}</span></td>
                                         <td style="font-size: 12px; color: #8b949e;">${c.image}</td>
                                         <td><code>${c.key || 'N/A'}</code></td>
+                                        <td style="font-size: 12px; color: #8b949e;">${c.expiration_date ? new Date(c.expiration_date).toLocaleString() : 'Never'}</td>
                                         <td>
                                             <div class="actions">
-                                                ${c.status !== 'running' ? 
-                                                    `<button onclick="startExistingContainer('${c.host_id}', '${c.id}')" class="btn btn-primary btn-sm">Start</button>` : 
-                                                    `<button onclick="stopContainer('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm">Stop</button>`
-                                                }
-                                                <button onclick="restartContainer('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm">Restart</button>
-                                                <button onclick="killContainer('${c.host_id}', '${c.id}')" class="btn btn-danger btn-sm">Kill</button>
-                                                <button onclick="removeContainer('${c.host_id}', '${c.id}')" class="btn btn-danger btn-sm">Remove</button>
-                                                <button onclick="showLogs('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm">Logs</button>
+                                                ${canEdit ? (
+                                                    c.status !== 'running' && c.status !== 'expired' ? 
+                                                        `<button onclick="startExistingContainer('${c.host_id}', '${c.id}')" class="btn btn-primary btn-sm"><span class="icon-play"></span> Start</button>` : 
+                                                        c.status === 'running' ? `<button onclick="stopContainer('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm"><span class="icon-stop"></span> Stop</button>` : ''
+                                                ) : ''}
+                                                ${canEdit && c.status !== 'expired' ? `<button onclick="restartContainer('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm"><span class="icon-restart"></span> Restart</button>` : ''}
+                                                ${canEdit ? `<button onclick="removeContainer('${c.host_id}', '${c.id}')" class="btn btn-danger btn-sm"><span class="icon-remove"></span> Remove</button>` : ''}
+                                                <button onclick="showLogs('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm"><span class="icon-logs"></span> Logs</button>
                                             </div>
                                         </td>
                                     </tr>
@@ -391,6 +673,7 @@
         async function startContainer() {
             const hostId = document.getElementById('host-select').value;
             const key = document.getElementById('key-input').value;
+            const expirationDate = document.getElementById('expiration-input').value;
             
             if (!hostId) {
                 showAlert('Please select a host', 'error');
@@ -402,11 +685,24 @@
                 return;
             }
             
+            // Validate key format: only 0-9 and a-z
+            if (!/^[0-9a-z]{32}$/.test(key)) {
+                showAlert('Key must contain only numbers (0-9) and lowercase letters (a-z)', 'error');
+                return;
+            }
+            
+            const payload = { host_id: parseInt(hostId), key: key };
+            
+            // Add expiration date if provided
+            if (expirationDate) {
+                payload.expiration_date = new Date(expirationDate).toISOString();
+            }
+            
             try {
                 const response = await fetch('/api/containers/start', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ host_id: parseInt(hostId), key: key })
+                    body: JSON.stringify(payload)
                 });
                 
                 const data = await response.json();
@@ -414,6 +710,7 @@
                 if (response.ok) {
                     showAlert('Container started successfully with key: ' + key, 'success');
                     document.getElementById('key-input').value = '';
+                    document.getElementById('expiration-input').value = '';
                     refreshContainers();
                 } else {
                     showAlert('Error: ' + data.error, 'error');
@@ -469,22 +766,6 @@
             }
         }
         
-        async function killContainer(hostId, containerId) {
-            if (!confirm('Kill this container? This will forcefully stop it.')) return;
-            try {
-                const response = await fetch(`/api/containers/${hostId}/${containerId}/kill`, { method: 'POST' });
-                const data = await response.json();
-                if (response.ok) {
-                    showAlert('Container killed', 'success');
-                    refreshContainers();
-                } else {
-                    showAlert('Error: ' + data.error, 'error');
-                }
-            } catch (error) {
-                showAlert('Error: ' + error.message, 'error');
-            }
-        }
-        
         async function removeContainer(hostId, containerId) {
             if (!confirm('Remove this container? This action cannot be undone.')) return;
             try {
@@ -499,6 +780,62 @@
             } catch (error) {
                 showAlert('Error: ' + error.message, 'error');
             }
+        }
+        
+        async function exportKeys() {
+            try {
+                window.location.href = '/api/containers/export-keys';
+            } catch (error) {
+                showAlert('Error exporting keys: ' + error.message, 'error');
+            }
+        }
+        
+        async function showHostStats(hostId) {
+            const modal = document.getElementById('stats-modal');
+            const loading = document.getElementById('stats-loading');
+            const content = document.getElementById('stats-content');
+            
+            loading.style.display = 'block';
+            content.style.display = 'none';
+            modal.classList.add('active');
+            
+            try {
+                const response = await fetch(`/api/hosts/${hostId}/stats`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    const stats = data.stats;
+                    
+                    // Update stats display
+                    document.getElementById('stat-docker-version').textContent = stats.docker_version;
+                    document.getElementById('stat-os').textContent = stats.os;
+                    document.getElementById('stat-arch').textContent = stats.architecture;
+                    document.getElementById('stat-cpu-cores').textContent = stats.cpu.cores;
+                    document.getElementById('stat-mem-total').textContent = stats.memory.total_gb;
+                    
+                    // Hide used memory since Docker info() doesn't provide it
+                    document.getElementById('stat-mem-used').parentElement.style.display = 'none';
+                    document.getElementById('stat-mem-bar').parentElement.style.display = 'none';
+                    
+                    document.getElementById('stat-disk-used').textContent = stats.disk ? stats.disk.used_gb : 'N/A';
+                    document.getElementById('stat-containers-total').textContent = stats.containers.total;
+                    document.getElementById('stat-containers-running').textContent = stats.containers.running;
+                    document.getElementById('stat-containers-stopped').textContent = stats.containers.stopped;
+                    document.getElementById('stat-containers-paused').textContent = stats.containers.paused;
+                    document.getElementById('stat-images').textContent = stats.images;
+                    
+                    loading.style.display = 'none';
+                    content.style.display = 'block';
+                } else {
+                    loading.innerHTML = '<div style="color: #f85149;">Error loading stats: ' + data.error + '</div>';
+                }
+            } catch (error) {
+                loading.innerHTML = '<div style="color: #f85149;">Error loading stats: ' + error.message + '</div>';
+            }
+        }
+        
+        function closeStatsModal() {
+            document.getElementById('stats-modal').classList.remove('active');
         }
         
         async function showLogs(hostId, containerId) {
@@ -526,64 +863,11 @@
             document.getElementById('logs-modal').classList.remove('active');
         }
         
-        function showAddHostModal() {
-            document.getElementById('add-host-modal').classList.add('active');
-        }
-        
-        function closeAddHostModal() {
-            document.getElementById('add-host-modal').classList.remove('active');
-            document.getElementById('add-host-form').reset();
-        }
-        
-        async function addHost() {
-            const name = document.getElementById('host-name').value;
-            const url = document.getElementById('host-url').value;
-            const description = document.getElementById('host-description').value;
-            
-            try {
-                const response = await fetch('/api/hosts', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ name, url, description })
-                });
-                
-                const data = await response.json();
-                
-                if (response.ok) {
-                    showAlert('Host added successfully!', 'success');
-                    closeAddHostModal();
-                    location.reload();
-                } else {
-                    showAlert('Error: ' + data.error, 'error');
-                }
-            } catch (error) {
-                showAlert('Error adding host: ' + error.message, 'error');
-            }
-        }
-        
-        async function removeHost(hostId) {
-            if (!confirm('Remove this Docker host? This will not affect running containers.')) return;
-            
-            try {
-                const response = await fetch(`/api/hosts/${hostId}`, { method: 'DELETE' });
-                const data = await response.json();
-                
-                if (response.ok) {
-                    showAlert('Host removed', 'success');
-                    location.reload();
-                } else {
-                    showAlert('Error: ' + data.error, 'error');
-                }
-            } catch (error) {
-                showAlert('Error: ' + error.message, 'error');
-            }
-        }
-        
         window.onclick = function(event) {
-            const hostModal = document.getElementById('add-host-modal');
             const logsModal = document.getElementById('logs-modal');
-            if (event.target === hostModal) closeAddHostModal();
+            const statsModal = document.getElementById('stats-modal');
             if (event.target === logsModal) closeLogsModal();
+            if (event.target === statsModal) closeStatsModal();
         }
     </script>
 </body>
