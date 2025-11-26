@@ -16,6 +16,14 @@
             --danger-color: #f85149;
             --warning-color: #f0b72f;
             --input-bg-color: #0d1117;
+            --alert-success-bg: #1f2d1f;
+            --alert-success-border: #238636;
+            --alert-error-bg: #2d1b1e;
+            --alert-error-border: #da3633;
+            --status-running-bg: #1f2d1f;
+            --status-exited-bg: #2d1b1e;
+            --status-expired-bg: #3d2e00;
+            --status-created-bg: #1f2d3d;
         }
         
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -79,8 +87,8 @@
             margin-bottom: 16px;
             border: 1px solid;
         }
-        .alert-success { background: #1f2d1f; border-color: #238636; color: var(--success-color); }
-        .alert-error { background: #2d1b1e; border-color: #da3633; color: var(--danger-color); }
+        .alert-success { background: var(--alert-success-bg); border-color: var(--alert-success-border); color: var(--success-color); }
+        .alert-error { background: var(--alert-error-bg); border-color: var(--alert-error-border); color: var(--danger-color); }
         
         .card {
             background: var(--card-bg-color);
@@ -168,10 +176,10 @@
             font-weight: 500;
         }
         
-        .status-running { background: #1f2d1f; color: var(--success-color); }
-        .status-exited { background: #2d1b1e; color: var(--danger-color); }
-        .status-expired { background: #3d2e00; color: var(--warning-color); }
-        .status-created { background: #1f2d3d; color: var(--primary-color); }
+        .status-running { background: var(--status-running-bg); color: var(--success-color); }
+        .status-exited { background: var(--status-exited-bg); color: var(--danger-color); }
+        .status-expired { background: var(--status-expired-bg); color: var(--warning-color); }
+        .status-created { background: var(--status-created-bg); color: var(--primary-color); }
         
         .actions { display: flex; gap: 4px; flex-wrap: wrap; }
         
@@ -461,6 +469,10 @@
             <div class="card-header">
                 <span class="icon-container"></span> Running Containers
                 <div style="display: flex; gap: 8px;">
+                    {% if can_edit %}
+                    <button onclick="document.getElementById('import-file-input').click()" class="btn btn-secondary btn-sm"><span class="icon-add"></span> Import Keys</button>
+                    <input type="file" id="import-file-input" accept=".csv" style="display: none;" onchange="importKeys(this)">
+                    {% endif %}
                     <button onclick="exportKeys()" class="btn btn-secondary btn-sm"><span class="icon-export"></span> Export Keys</button>
                     <button onclick="refreshContainers()" class="btn btn-secondary btn-sm"><span class="icon-refresh"></span> Refresh</button>
                 </div>
@@ -634,13 +646,21 @@
                     bg: '#0d1117', cardBg: '#161b22', border: '#30363d', 
                     text: '#e6edf3', textMuted: '#8b949e', primary: '#58a6ff',
                     success: '#3fb950', danger: '#f85149', warning: '#f0b72f',
-                    inputBg: '#0d1117'
+                    inputBg: '#0d1117',
+                    alertSuccessBg: '#1f2d1f', alertSuccessBorder: '#238636',
+                    alertErrorBg: '#2d1b1e', alertErrorBorder: '#da3633',
+                    statusRunningBg: '#1f2d1f', statusExitedBg: '#2d1b1e',
+                    statusExpiredBg: '#3d2e00', statusCreatedBg: '#1f2d3d'
                 },
                 'light': {
                     bg: '#ffffff', cardBg: '#f6f8fa', border: '#d0d7de',
                     text: '#24292f', textMuted: '#57606a', primary: '#0969da',
                     success: '#1a7f37', danger: '#cf222e', warning: '#9a6700',
-                    inputBg: '#ffffff'
+                    inputBg: '#ffffff',
+                    alertSuccessBg: '#dafbe1', alertSuccessBorder: '#1a7f37',
+                    alertErrorBg: '#ffebe9', alertErrorBorder: '#cf222e',
+                    statusRunningBg: '#dafbe1', statusExitedBg: '#ffebe9',
+                    statusExpiredBg: '#fff8c5', statusCreatedBg: '#ddf4ff'
                 }
             };
             
@@ -655,6 +675,14 @@
             document.documentElement.style.setProperty('--danger-color', t.danger);
             document.documentElement.style.setProperty('--warning-color', t.warning);
             document.documentElement.style.setProperty('--input-bg-color', t.inputBg);
+            document.documentElement.style.setProperty('--alert-success-bg', t.alertSuccessBg);
+            document.documentElement.style.setProperty('--alert-success-border', t.alertSuccessBorder);
+            document.documentElement.style.setProperty('--alert-error-bg', t.alertErrorBg);
+            document.documentElement.style.setProperty('--alert-error-border', t.alertErrorBorder);
+            document.documentElement.style.setProperty('--status-running-bg', t.statusRunningBg);
+            document.documentElement.style.setProperty('--status-exited-bg', t.statusExitedBg);
+            document.documentElement.style.setProperty('--status-expired-bg', t.statusExpiredBg);
+            document.documentElement.style.setProperty('--status-created-bg', t.statusCreatedBg);
         }
         
         async function refreshContainers() {
@@ -833,6 +861,58 @@
                 window.location.href = '/api/containers/export-keys';
             } catch (error) {
                 showAlert('Error exporting keys: ' + error.message, 'error');
+            }
+        }
+        
+        async function importKeys(input) {
+            const file = input.files[0];
+            if (!file) return;
+            
+            if (!file.name.endsWith('.csv')) {
+                showAlert('Please select a CSV file', 'error');
+                input.value = '';
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                showAlert('Importing keys...', 'success');
+                const response = await fetch('/api/containers/import-keys', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    const summary = data.summary;
+                    let message = `Import complete: ${summary.imported} imported`;
+                    if (summary.skipped > 0) message += `, ${summary.skipped} skipped`;
+                    if (summary.failed > 0) message += `, ${summary.failed} failed`;
+                    
+                    showAlert(message, summary.failed > 0 ? 'error' : 'success');
+                    
+                    // Show detailed results if there are failures
+                    if (summary.failed > 0 && data.details.failed.length > 0) {
+                        console.log('Failed imports:', data.details.failed);
+                        setTimeout(() => {
+                            const failures = data.details.failed.slice(0, 3).map(f => `Row ${f.row}: ${f.error}`).join('; ');
+                            showAlert('First failures: ' + failures, 'error');
+                        }, 5500);
+                    }
+                    
+                    // Refresh container list
+                    refreshContainers();
+                } else {
+                    showAlert('Import failed: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error importing keys: ' + error.message, 'error');
+            } finally {
+                // Reset file input
+                input.value = '';
             }
         }
         

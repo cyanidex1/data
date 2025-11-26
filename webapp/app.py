@@ -861,6 +861,174 @@ def export_keys():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/containers/import-keys', methods=['POST'])
+@login_required
+def import_keys():
+    """Import container keys from CSV - requires edit permission"""
+    if not current_user.can_edit():
+        return jsonify({'error': 'Edit privileges required'}), 403
+    
+    try:
+        # Check if file was uploaded
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file uploaded'}), 400
+        
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        if not file.filename.endswith('.csv'):
+            return jsonify({'error': 'File must be a CSV'}), 400
+        
+        # Read and parse CSV
+        stream = StringIO(file.stream.read().decode('utf-8'))
+        reader = csv.DictReader(stream)
+        
+        # Validate headers
+        expected_headers = {'Host', 'Container', 'Key', 'Status', 'Expiration'}
+        if not expected_headers.issubset(set(reader.fieldnames or [])):
+            return jsonify({'error': f'Invalid CSV format. Expected headers: {", ".join(expected_headers)}'}), 400
+        
+        # Process each row
+        results = {
+            'success': [],
+            'skipped': [],
+            'failed': []
+        }
+        
+        for row_num, row in enumerate(reader, start=2):  # Start at 2 (header is row 1)
+            host_name = row.get('Host', '').strip()
+            key = row.get('Key', '').strip()
+            expiration = row.get('Expiration', '').strip()
+            
+            # Validate key
+            if not key:
+                results['failed'].append({
+                    'row': row_num,
+                    'key': key,
+                    'error': 'Missing key'
+                })
+                continue
+            
+            if len(key) != 32 or not re.match(r'^[0-9a-z]{32}$', key):
+                results['failed'].append({
+                    'row': row_num,
+                    'key': key,
+                    'error': 'Invalid key format (must be 32 characters, 0-9 and a-z only)'
+                })
+                continue
+            
+            # Find host by name
+            host = None
+            for h in host_manager.hosts:
+                if h['name'] == host_name:
+                    host = h
+                    break
+            
+            if not host:
+                results['failed'].append({
+                    'row': row_num,
+                    'key': key,
+                    'error': f'Host "{host_name}" not found'
+                })
+                continue
+            
+            # Check if container already exists
+            client = host_manager.get_client(host['id'])
+            if not client:
+                results['failed'].append({
+                    'row': row_num,
+                    'key': key,
+                    'error': f'Could not connect to host "{host_name}"'
+                })
+                continue
+            
+            # Check if container with this key already exists
+            exists = False
+            try:
+                containers = client.containers.list(all=True)
+                for c in containers:
+                    env_vars = c.attrs.get('Config', {}).get('Env', [])
+                    for env in env_vars:
+                        if env.startswith('DATAGRAM_KEY=') and env.split('=', 1)[1] == key:
+                            exists = True
+                            break
+                    if exists:
+                        break
+            except:
+                pass
+            
+            if exists:
+                results['skipped'].append({
+                    'row': row_num,
+                    'key': key,
+                    'reason': 'Container with this key already exists'
+                })
+                continue
+            
+            # Check if image exists
+            try:
+                client.images.get(DEFAULT_IMAGE)
+            except docker.errors.ImageNotFound:
+                results['failed'].append({
+                    'row': row_num,
+                    'key': key,
+                    'error': f'Image "{DEFAULT_IMAGE}" not found on host "{host_name}"'
+                })
+                continue
+            
+            # Prepare environment variables
+            env_vars = {'DATAGRAM_KEY': key}
+            if expiration and expiration != 'N/A':
+                try:
+                    # Try to parse the expiration date
+                    exp_dt = datetime.fromisoformat(expiration)
+                    env_vars['EXPIRATION_DATE'] = expiration
+                except:
+                    # If parsing fails, skip expiration date
+                    pass
+            
+            # Start the container
+            try:
+                container = client.containers.run(
+                    DEFAULT_IMAGE,
+                    name=key,
+                    environment=env_vars,
+                    platform='linux/amd64',
+                    detach=True,
+                    restart_policy={'Name': 'unless-stopped'},
+                    mem_limit='100m',
+                    memswap_limit='200m'
+                )
+                
+                results['success'].append({
+                    'row': row_num,
+                    'key': key,
+                    'host': host_name,
+                    'container_id': container.id[:12]
+                })
+            except Exception as e:
+                results['failed'].append({
+                    'row': row_num,
+                    'key': key,
+                    'error': str(e)
+                })
+        
+        return jsonify({
+            'success': True,
+            'summary': {
+                'total': len(results['success']) + len(results['skipped']) + len(results['failed']),
+                'imported': len(results['success']),
+                'skipped': len(results['skipped']),
+                'failed': len(results['failed'])
+            },
+            'details': results
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/hosts/<int:host_id>/stats', methods=['GET'])
 @login_required
 def get_host_stats(host_id):
