@@ -577,11 +577,11 @@ def list_containers():
             for container in containers:
                 # Get environment variables to extract the key
                 env_vars = container.attrs.get('Config', {}).get('Env', [])
-                datagram_key = None
+                license_key = None
                 expiration_date = None
                 for env in env_vars:
-                    if env.startswith('DATAGRAM_KEY='):
-                        datagram_key = env.split('=', 1)[1]
+                    if env.startswith('LICENSE_KEY='):
+                        license_key = env.split('=', 1)[1]
                     elif env.startswith('EXPIRATION_DATE='):
                         expiration_date = env.split('=', 1)[1]
                 
@@ -603,7 +603,7 @@ def list_containers():
                     'status': status,
                     'image': container.image.tags[0] if container.image.tags else container.image.id[:12],
                     'created': container.attrs['Created'],
-                    'key': datagram_key,
+                    'key': license_key,
                     'expiration_date': expiration_date
                 })
         except Exception as e:
@@ -651,7 +651,7 @@ def start_container():
                     for c in existing_containers:
                         env_vars = c.attrs.get('Config', {}).get('Env', [])
                         for env in env_vars:
-                            if env.startswith('DATAGRAM_KEY=') and env.split('=', 1)[1] == key:
+                            if env.startswith('LICENSE_KEY=') and env.split('=', 1)[1] == key:
                                 return jsonify({'error': f'Container with key "{key}" already exists on host "{host["name"]}"'}), 400
                 except:
                     pass
@@ -663,7 +663,7 @@ def start_container():
             return jsonify({'error': f'Image "{DEFAULT_IMAGE}" not found on host. Please build it first.'}), 400
         
         # Prepare environment variables
-        env_vars = {'DATAGRAM_KEY': key}
+        env_vars = {'LICENSE_KEY': key}
         if expiration_date:
             # Validate and store expiration date
             try:
@@ -823,20 +823,20 @@ def export_keys():
                 containers = client.containers.list(all=True)
                 for container in containers:
                     env_vars = container.attrs.get('Config', {}).get('Env', [])
-                    datagram_key = None
+                    license_key = None
                     expiration_date = None
                     
                     for env in env_vars:
-                        if env.startswith('DATAGRAM_KEY='):
-                            datagram_key = env.split('=', 1)[1]
+                        if env.startswith('LICENSE_KEY='):
+                            license_key = env.split('=', 1)[1]
                         elif env.startswith('EXPIRATION_DATE='):
                             expiration_date = env.split('=', 1)[1]
                     
-                    if datagram_key:
+                    if license_key:
                         all_keys.append({
                             'host': host['name'],
                             'container': container.name,
-                            'key': datagram_key,
+                            'key': license_key,
                             'status': container.status,
                             'expiration': expiration_date or 'N/A'
                         })
@@ -950,7 +950,7 @@ def import_keys():
                 for c in containers:
                     env_vars = c.attrs.get('Config', {}).get('Env', [])
                     for env in env_vars:
-                        if env.startswith('DATAGRAM_KEY=') and env.split('=', 1)[1] == key:
+                        if env.startswith('LICENSE_KEY=') and env.split('=', 1)[1] == key:
                             exists = True
                             break
                     if exists:
@@ -978,7 +978,7 @@ def import_keys():
                 continue
             
             # Prepare environment variables
-            env_vars = {'DATAGRAM_KEY': key}
+            env_vars = {'LICENSE_KEY': key}
             if expiration and expiration != 'N/A':
                 try:
                     # Try to parse the expiration date

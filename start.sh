@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# Usage: ./start.sh <DATAGRAM_KEY> [CONTAINER_NAME_PREFIX]
+# Usage: ./start.sh <LICENSE_KEY> [CONTAINER_NAME_PREFIX]
 
 if [ $# -lt 1 ]; then
-  echo "Usage: $0 <DATAGRAM_KEY> [CONTAINER_NAME_PREFIX]"
+  echo "Usage: $0 <LICENSE_KEY> [CONTAINER_NAME_PREFIX]"
   exit 1
 fi
 
-DATAGRAM_KEY="$1"
+LICENSE_KEY="$1"
 CONTAINER_PREFIX="${2:-node}"  # Default to "node" if not provided
 
 # Build image if not already built
@@ -27,7 +27,7 @@ echo "[*] Launching container '$CONTAINER_NAME' in background..."
 
 docker run \
   --platform linux/amd64 \
-  --env DATAGRAM_KEY="$DATAGRAM_KEY" \
+  --env LICENSE_KEY="$LICENSE_KEY" \
   --name "$CONTAINER_NAME" \
   --restart unless-stopped \
   --memory="100m" \

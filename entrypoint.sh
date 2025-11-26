@@ -1,11 +1,11 @@
-#!/bin/bash
+#!/bin/sh
 
 echo "[*] Starting Datagram container..."
 
-if [ -z "$DATAGRAM_KEY" ]; then
-  echo "[!] Error: DATAGRAM_KEY environment variable is not set." >&2
+if [ -z "$LICENSE_KEY" ]; then
+  echo "[!] Error: LICENSE_KEY environment variable is not set." >&2
   exit 1
 fi
 
-echo "[*] Running datagram with key: $DATAGRAM_KEY"
-datagram run -- -key "$DATAGRAM_KEY"
+echo "[*] Running datagram with key: $LICENSE_KEY"
+/usr/local/bin/datagram run -- -key "$LICENSE_KEY"
