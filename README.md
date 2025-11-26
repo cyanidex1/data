@@ -166,12 +166,11 @@ The web panel provides real-time monitoring and manual control, while the cron j
 
 ```
 .
-├── Dockerfile                  # Original datagram node Dockerfile
+├── Dockerfile                  # Alpine-based datagram node Dockerfile
 ├── docker-compose.yml          # Compose file for control panel
-├── start.sh                    # Original script for starting nodes
+├── start.sh                    # Script for starting nodes
 ├── unhealthy.sh               # Cron script for auto-recovery
 ├── entrypoint.sh              # Node entrypoint script
-├── datagram-cli-x86_64-linux  # Datagram CLI binary
 ├── webapp/
 │   ├── Dockerfile             # Control panel Dockerfile
 │   ├── requirements.txt       # Python dependencies
