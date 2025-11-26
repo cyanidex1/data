@@ -27,8 +27,9 @@ login_manager.login_view = 'login'
 login_manager.login_message = 'Please log in to access the control panel.'
 
 # Store Docker hosts configuration
-HOSTS_FILE = '/data/docker_hosts.json'
-USERS_FILE = '/data/users.json'
+DATA_DIR = os.environ.get('DATA_DIR', '/data')
+HOSTS_FILE = os.path.join(DATA_DIR, 'docker_hosts.json')
+USERS_FILE = os.path.join(DATA_DIR, 'users.json')
 DEFAULT_IMAGE = 'datagram'
 
 
@@ -647,7 +648,7 @@ def get_host_stats(host_id):
 
 if __name__ == '__main__':
     # Ensure data directory exists
-    os.makedirs('/data', exist_ok=True)
+    os.makedirs(DATA_DIR, exist_ok=True)
     
     # Add local host if no hosts exist
     if not host_manager.hosts:
