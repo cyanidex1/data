@@ -143,6 +143,31 @@ class UserManager:
             return True
         return False
     
+    def update_user(self, user_id, username=None, password=None, role=None):
+        """Update user details"""
+        user = self.users.get(user_id)
+        if not user:
+            return None
+        
+        if username is not None:
+            # Check if username already exists (excluding current user)
+            for u in self.users.values():
+                if u.username == username and u.id != user_id:
+                    return {'error': 'Username already exists'}
+            user.username = username
+        
+        if password is not None:
+            user.password_hash = generate_password_hash(password)
+            user.password_changed = True
+        
+        if role is not None:
+            if role not in ['viewer', 'editor', 'admin']:
+                return {'error': 'Invalid role'}
+            user.role = role
+        
+        self.save_users()
+        return user
+    
     def update_theme(self, user_id, theme):
         """Update user theme preference"""
         user = self.users.get(user_id)
@@ -212,6 +237,22 @@ class DockerHostManager:
         """Remove a Docker host"""
         self.hosts = [h for h in self.hosts if h['id'] != host_id]
         self.save_hosts()
+    
+    def update_host(self, host_id, name=None, url=None, description=None):
+        """Update a Docker host"""
+        host = self.get_host(host_id)
+        if not host:
+            return None
+        
+        if name is not None:
+            host['name'] = name
+        if url is not None:
+            host['url'] = url
+        if description is not None:
+            host['description'] = description
+        
+        self.save_hosts()
+        return host
     
     def get_host(self, host_id):
         """Get a specific Docker host"""
@@ -383,6 +424,48 @@ def delete_user(user_id):
     return jsonify({'error': 'User not found'}), 404
 
 
+@app.route('/api/users/<int:user_id>', methods=['PUT'])
+@login_required
+def update_user(user_id):
+    """Update a user - admin only"""
+    if not current_user.is_admin():
+        return jsonify({'error': 'Admin privileges required'}), 403
+    
+    data = request.json
+    username = data.get('username')
+    password = data.get('password')
+    role = data.get('role')
+    
+    # Validate role if provided
+    if role and role not in ['viewer', 'editor', 'admin']:
+        return jsonify({'error': 'Invalid role. Must be viewer, editor, or admin'}), 400
+    
+    # Validate password if provided
+    if password is not None and len(password) > 0 and len(password) < 6:
+        return jsonify({'error': 'Password must be at least 6 characters'}), 400
+    
+    # Don't update password if empty string
+    if password == '':
+        password = None
+    
+    result = user_manager.update_user(user_id, username=username, password=password, role=role)
+    
+    if result is None:
+        return jsonify({'error': 'User not found'}), 404
+    
+    if isinstance(result, dict) and 'error' in result:
+        return jsonify(result), 400
+    
+    return jsonify({
+        'success': True,
+        'user': {
+            'id': result.id,
+            'username': result.username,
+            'role': result.role
+        }
+    })
+
+
 @app.route('/api/theme', methods=['POST'])
 @login_required
 def update_theme():
@@ -449,6 +532,30 @@ def remove_host(host_id):
     
     host_manager.remove_host(host_id)
     return jsonify({'success': True})
+
+
+@app.route('/api/hosts/<int:host_id>', methods=['PUT'])
+@login_required
+def update_host(host_id):
+    """Update a Docker host - admin only"""
+    if not current_user.is_admin():
+        return jsonify({'error': 'Admin privileges required'}), 403
+    
+    data = request.json
+    name = data.get('name')
+    url = data.get('url')
+    description = data.get('description')
+    
+    # Validate that at least one field is provided
+    if name is None and url is None and description is None:
+        return jsonify({'error': 'At least one field (name, url, or description) is required'}), 400
+    
+    result = host_manager.update_host(host_id, name=name, url=url, description=description)
+    
+    if result is None:
+        return jsonify({'error': 'Host not found'}), 404
+    
+    return jsonify({'success': True, 'host': result})
 
 
 @app.route('/api/containers', methods=['GET'])

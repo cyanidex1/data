@@ -333,6 +333,7 @@
                             </td>
                             <td>{{ '✓' if user.password_changed else '✗' }}</td>
                             <td>
+                                <button onclick="showEditUserModal({{ user.id }}, '{{ user.username }}', '{{ user.role }}')" class="btn btn-secondary btn-sm">✎ Edit</button>
                                 {% if user.id != current_user.id %}
                                 <button onclick="deleteUser({{ user.id }})" class="btn btn-danger btn-sm"><span class="icon-remove"></span> Delete</button>
                                 {% endif %}
@@ -362,6 +363,7 @@
                         <p style="font-size: 11px; margin-top: 8px;">Added: {{ host.added_at[:19] }}</p>
                         <div class="btn-group">
                             <button onclick="showHostStats({{ host.id }})" class="btn btn-secondary btn-sm"><span class="icon-stats"></span> Stats</button>
+                            <button onclick="showEditHostModal({{ host.id }}, '{{ host.name }}', '{{ host.url }}', '{{ host.description|default('', true) }}')" class="btn btn-secondary btn-sm">✎ Edit</button>
                             <button onclick="removeHost({{ host.id }})" class="btn btn-danger btn-sm"><span class="icon-remove"></span> Remove</button>
                         </div>
                     </div>
@@ -487,6 +489,73 @@
         </div>
     </div>
 
+    <!-- Edit User Modal -->
+    <div id="edit-user-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">Edit User</div>
+            <form id="edit-user-form">
+                <input type="hidden" id="edit-user-id">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="edit-user-username">Username</label>
+                        <input type="text" id="edit-user-username" placeholder="Enter username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-user-password">New Password (leave blank to keep current)</label>
+                        <input type="password" id="edit-user-password" placeholder="Enter new password (optional)" minlength="6">
+                        <div class="help-text">Leave empty to keep the current password</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-user-role">Role</label>
+                        <select id="edit-user-role" required>
+                            <option value="viewer">Viewer (View only)</option>
+                            <option value="editor">Editor (View & edit containers)</option>
+                            <option value="admin">Admin (Full access)</option>
+                        </select>
+                        <div class="help-text">
+                            <strong>Viewer:</strong> Can only view containers<br>
+                            <strong>Editor:</strong> Can view and manage containers<br>
+                            <strong>Admin:</strong> Full access including user and host management
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" onclick="closeEditUserModal()" class="btn btn-secondary">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Host Modal -->
+    <div id="edit-host-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">Edit Docker Host</div>
+            <form id="edit-host-form">
+                <input type="hidden" id="edit-host-id">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="edit-host-name">Name</label>
+                        <input type="text" id="edit-host-name" placeholder="e.g., Production Server" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-host-url">URL</label>
+                        <input type="text" id="edit-host-url" placeholder="e.g., tcp://192.168.1.100:2375 or 'local'" required>
+                        <div class="help-text">Use 'local' for local Docker or tcp://host:port for remote</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-host-description">Description (optional)</label>
+                        <input type="text" id="edit-host-description" placeholder="Description of this host">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" onclick="closeEditHostModal()" class="btn btn-secondary">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('add-user-form').addEventListener('submit', function(e) {
@@ -497,6 +566,16 @@
             document.getElementById('add-host-form').addEventListener('submit', function(e) {
                 e.preventDefault();
                 addHost();
+            });
+            
+            document.getElementById('edit-user-form').addEventListener('submit', function(e) {
+                e.preventDefault();
+                updateUser();
+            });
+            
+            document.getElementById('edit-host-form').addEventListener('submit', function(e) {
+                e.preventDefault();
+                updateHost();
             });
         });
         
@@ -563,6 +642,51 @@
             }
         }
         
+        function showEditUserModal(userId, username, role) {
+            document.getElementById('edit-user-id').value = userId;
+            document.getElementById('edit-user-username').value = username;
+            document.getElementById('edit-user-password').value = '';
+            document.getElementById('edit-user-role').value = role;
+            document.getElementById('edit-user-modal').classList.add('active');
+        }
+        
+        function closeEditUserModal() {
+            document.getElementById('edit-user-modal').classList.remove('active');
+            document.getElementById('edit-user-form').reset();
+        }
+        
+        async function updateUser() {
+            const userId = document.getElementById('edit-user-id').value;
+            const username = document.getElementById('edit-user-username').value;
+            const password = document.getElementById('edit-user-password').value;
+            const role = document.getElementById('edit-user-role').value;
+            
+            const payload = { username, role };
+            if (password) {
+                payload.password = password;
+            }
+            
+            try {
+                const response = await fetch(`/api/users/${userId}`, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showAlert('User updated successfully!', 'success');
+                    closeEditUserModal();
+                    location.reload();
+                } else {
+                    showAlert('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error updating user: ' + error.message, 'error');
+            }
+        }
+        
         // Host Management Functions
         function showAddHostModal() {
             document.getElementById('add-host-modal').classList.add('active');
@@ -617,6 +741,46 @@
             }
         }
         
+        function showEditHostModal(hostId, name, url, description) {
+            document.getElementById('edit-host-id').value = hostId;
+            document.getElementById('edit-host-name').value = name;
+            document.getElementById('edit-host-url').value = url;
+            document.getElementById('edit-host-description').value = description || '';
+            document.getElementById('edit-host-modal').classList.add('active');
+        }
+        
+        function closeEditHostModal() {
+            document.getElementById('edit-host-modal').classList.remove('active');
+            document.getElementById('edit-host-form').reset();
+        }
+        
+        async function updateHost() {
+            const hostId = document.getElementById('edit-host-id').value;
+            const name = document.getElementById('edit-host-name').value;
+            const url = document.getElementById('edit-host-url').value;
+            const description = document.getElementById('edit-host-description').value;
+            
+            try {
+                const response = await fetch(`/api/hosts/${hostId}`, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ name, url, description })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showAlert('Host updated successfully!', 'success');
+                    closeEditHostModal();
+                    location.reload();
+                } else {
+                    showAlert('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error updating host: ' + error.message, 'error');
+            }
+        }
+        
         async function showHostStats(hostId) {
             const modal = document.getElementById('stats-modal');
             const loading = document.getElementById('stats-loading');
@@ -663,9 +827,13 @@
             const userModal = document.getElementById('add-user-modal');
             const hostModal = document.getElementById('add-host-modal');
             const statsModal = document.getElementById('stats-modal');
+            const editUserModal = document.getElementById('edit-user-modal');
+            const editHostModal = document.getElementById('edit-host-modal');
             if (event.target === userModal) closeAddUserModal();
             if (event.target === hostModal) closeAddHostModal();
             if (event.target === statsModal) closeStatsModal();
+            if (event.target === editUserModal) closeEditUserModal();
+            if (event.target === editHostModal) closeEditHostModal();
         }
     </script>
 </body>
