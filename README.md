@@ -265,6 +265,190 @@ docker build --platform linux/amd64 -t datagram .
 4. **Limit Docker socket access** to trusted users only
 5. **Use Docker secrets** for sensitive configuration in production
 
+## 🔒 Secure Setup and Hardening Guide
+
+This section provides a comprehensive guide for securely deploying the Datagram Control Panel in production environments.
+
+### 1. Change Default Credentials
+
+**CRITICAL**: The default admin credentials are `admin/admin`. Change them immediately after first login.
+
+```bash
+# Set custom admin credentials via environment variables before first run
+docker compose down
+docker volume rm data_panel-data  # Remove old data if exists
+
+# Set secure credentials
+export ADMIN_USERNAME=secure_admin_name
+export ADMIN_PASSWORD=$(openssl rand -base64 32)
+echo "Admin Password: $ADMIN_PASSWORD"  # Save this securely
+
+# Update docker-compose.yml to include:
+# environment:
+#   - ADMIN_USERNAME=${ADMIN_USERNAME}
+#   - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+
+docker compose up -d
+```
+
+### 2. Generate a Strong SECRET_KEY
+
+```bash
+# Generate a cryptographically secure secret key
+export SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+
+# Add to docker-compose.yml:
+# environment:
+#   - SECRET_KEY=${SECRET_KEY}
+```
+
+### 3. Role-Based Access Control
+
+The control panel implements three user roles with server-side validation:
+
+| Role | Permissions |
+|------|-------------|
+| **Viewer** | View containers and logs only |
+| **Editor** | View + Start/Stop/Restart/Remove containers |
+| **Admin** | Full access including user and host management |
+
+**Best Practices:**
+- Create separate accounts for each user
+- Assign the minimum required role for each user
+- Regularly audit user accounts and remove unused ones
+- Admin accounts should be limited to trusted personnel only
+
+### 4. Secure Docker Remote Access
+
+If managing remote Docker hosts, **never** expose the Docker daemon without TLS:
+
+```bash
+# On the remote Docker host, generate certificates:
+mkdir -p ~/.docker/certs
+cd ~/.docker/certs
+
+# Generate CA key and certificate
+openssl genrsa -aes256 -out ca-key.pem 4096
+openssl req -new -x509 -days 365 -key ca-key.pem -sha256 -out ca.pem
+
+# Generate server key and certificate
+openssl genrsa -out server-key.pem 4096
+openssl req -subj "/CN=your-hostname" -sha256 -new -key server-key.pem -out server.csr
+echo "subjectAltName = DNS:your-hostname,IP:your-ip" > extfile.cnf
+openssl x509 -req -days 365 -sha256 -in server.csr -CA ca.pem -CAkey ca-key.pem \
+  -CAcreateserial -out server-cert.pem -extfile extfile.cnf
+
+# Configure Docker daemon (/etc/docker/daemon.json):
+{
+  "hosts": ["unix:///var/run/docker.sock", "tcp://0.0.0.0:2376"],
+  "tls": true,
+  "tlscacert": "/root/.docker/certs/ca.pem",
+  "tlscert": "/root/.docker/certs/server-cert.pem",
+  "tlskey": "/root/.docker/certs/server-key.pem",
+  "tlsverify": true
+}
+```
+
+### 5. Network Security
+
+#### Firewall Configuration
+
+```bash
+# Allow only specific IPs to access the control panel
+sudo ufw allow from 192.168.1.0/24 to any port 5000
+
+# Block all other access
+sudo ufw deny 5000
+```
+
+#### Reverse Proxy with HTTPS (Recommended)
+
+Use nginx or Caddy as a reverse proxy with SSL:
+
+```nginx
+# /etc/nginx/sites-available/datagram-panel
+server {
+    listen 443 ssl http2;
+    server_name panel.yourdomain.com;
+
+    ssl_certificate /etc/letsencrypt/live/panel.yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/panel.yourdomain.com/privkey.pem;
+    
+    # Strong SSL configuration
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256;
+    ssl_prefer_server_ciphers off;
+    
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    location / {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# Redirect HTTP to HTTPS
+server {
+    listen 80;
+    server_name panel.yourdomain.com;
+    return 301 https://$server_name$request_uri;
+}
+```
+
+### 6. Container Resource Limits
+
+The control panel automatically applies resource limits to containers:
+- Memory limit: 100MB
+- Memory + Swap limit: 200MB
+
+For additional security, consider adding:
+
+```python
+# In app.py, modify container.run() to include:
+security_opt=['no-new-privileges:true'],
+read_only=True,  # If applicable
+```
+
+### 7. Monitoring and Logging
+
+Enable comprehensive logging:
+
+```bash
+# View control panel logs
+docker logs -f datagram-control-panel
+
+# Enable debug mode for troubleshooting (not for production)
+# environment:
+#   - DEBUG=False  # Keep False in production
+```
+
+### 8. Regular Security Maintenance
+
+- **Update regularly**: Keep Docker, Python packages, and the control panel updated
+- **Rotate credentials**: Change admin passwords and SECRET_KEY periodically
+- **Review access**: Audit user accounts monthly
+- **Monitor logs**: Check for unauthorized access attempts
+- **Backup data**: Regularly backup `/data` directory
+
+### 9. Production Deployment Checklist
+
+- [ ] Changed default admin credentials
+- [ ] Generated strong SECRET_KEY
+- [ ] Set DEBUG=False
+- [ ] Configured HTTPS via reverse proxy
+- [ ] Restricted network access with firewall
+- [ ] Enabled TLS for remote Docker connections
+- [ ] Reviewed and assigned appropriate user roles
+- [ ] Set up log monitoring
+- [ ] Configured regular backups
+
 ## 💡 Complete Example
 
 Here's a complete workflow from installation to running multiple nodes:

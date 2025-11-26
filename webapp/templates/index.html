@@ -5,12 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Datagram Control Panel</title>
     <style>
+        :root {
+            --bg-color: #0d1117;
+            --card-bg-color: #161b22;
+            --border-color: #30363d;
+            --text-color: #e6edf3;
+            --text-muted-color: #8b949e;
+            --primary-color: #58a6ff;
+            --success-color: #3fb950;
+            --danger-color: #f85149;
+            --warning-color: #f0b72f;
+            --input-bg-color: #0d1117;
+        }
+        
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
-            background: #0d1117;
-            color: #e6edf3;
+            background: var(--bg-color);
+            color: var(--text-color);
             line-height: 1.6;
         }
         
@@ -24,22 +37,22 @@
             margin-right: 4px;
         }
         
-        .icon-container::before { content: '⬡'; color: #58a6ff; }
-        .icon-host::before { content: '◫'; color: #8b949e; }
-        .icon-play::before { content: '▶'; color: #3fb950; font-size: 12px; }
-        .icon-stop::before { content: '■'; color: #f85149; font-size: 12px; }
+        .icon-container::before { content: '⬡'; color: var(--primary-color); }
+        .icon-host::before { content: '◫'; color: var(--text-muted-color); }
+        .icon-play::before { content: '▶'; color: var(--success-color); font-size: 12px; }
+        .icon-stop::before { content: '■'; color: var(--danger-color); font-size: 12px; }
         .icon-restart::before { content: '↻'; color: #a371f7; }
-        .icon-refresh::before { content: '↻'; color: #8b949e; }
-        .icon-export::before { content: '↓'; color: #58a6ff; }
-        .icon-add::before { content: '+'; color: #3fb950; font-weight: bold; }
-        .icon-remove::before { content: '×'; color: #f85149; font-weight: bold; }
-        .icon-logs::before { content: '≡'; color: #8b949e; }
-        .icon-stats::before { content: '◉'; color: #58a6ff; }
+        .icon-refresh::before { content: '↻'; color: var(--text-muted-color); }
+        .icon-export::before { content: '↓'; color: var(--primary-color); }
+        .icon-add::before { content: '+'; color: var(--success-color); font-weight: bold; }
+        .icon-remove::before { content: '×'; color: var(--danger-color); font-weight: bold; }
+        .icon-logs::before { content: '≡'; color: var(--text-muted-color); }
+        .icon-stats::before { content: '◉'; color: var(--primary-color); }
         
         
         .header {
-            background: #161b22;
-            border-bottom: 1px solid #30363d;
+            background: var(--card-bg-color);
+            border-bottom: 1px solid var(--border-color);
             padding: 16px 0;
         }
         
@@ -53,8 +66,8 @@
         }
         
         .header-title { font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
-        .header-title::before { content: '⬡'; color: #58a6ff; font-size: 30px; } /* Increased from 24px to 30px */
-        .header-user { font-size: 14px; color: #8b949e; display: flex; gap: 12px; align-items: center; }
+        .header-title::before { content: '⬡'; color: var(--primary-color); font-size: 30px; } /* Increased from 24px to 30px */
+        .header-user { font-size: 14px; color: var(--text-muted-color); display: flex; gap: 12px; align-items: center; }
         .header-user a, .header-user .username-link { color: #2f81f7; text-decoration: none; cursor: pointer; }
         .header-user a:hover, .header-user .username-link:hover { text-decoration: underline; }
         
@@ -66,19 +79,19 @@
             margin-bottom: 16px;
             border: 1px solid;
         }
-        .alert-success { background: #1f2d1f; border-color: #238636; color: #3fb950; }
-        .alert-error { background: #2d1b1e; border-color: #da3633; color: #f85149; }
+        .alert-success { background: #1f2d1f; border-color: #238636; color: var(--success-color); }
+        .alert-error { background: #2d1b1e; border-color: #da3633; color: var(--danger-color); }
         
         .card {
-            background: #161b22;
-            border: 1px solid #30363d;
+            background: var(--card-bg-color);
+            border: 1px solid var(--border-color);
             border-radius: 6px;
             margin-bottom: 16px;
         }
         
         .card-header {
             padding: 16px;
-            border-bottom: 1px solid #30363d;
+            border-bottom: 1px solid var(--border-color);
             font-size: 16px;
             font-weight: 600;
             display: flex;
@@ -94,10 +107,10 @@
         select, input[type="text"] {
             width: 100%;
             padding: 8px 12px;
-            background: #0d1117;
-            border: 1px solid #30363d;
+            background: var(--input-bg-color);
+            border: 1px solid var(--border-color);
             border-radius: 6px;
-            color: #e6edf3;
+            color: var(--text-color);
             font-size: 14px;
             font-family: inherit;
         }
@@ -120,8 +133,8 @@
         
         .btn-primary { background: #238636; color: #fff; }
         .btn-primary:hover { background: #2ea043; }
-        .btn-secondary { background: #21262d; color: #e6edf3; border: 1px solid #30363d; }
-        .btn-secondary:hover { background: #30363d; }
+        .btn-secondary { background: var(--card-bg-color); color: var(--text-color); border: 1px solid var(--border-color); }
+        .btn-secondary:hover { background: var(--border-color); }
         .btn-danger { background: #da3633; color: #fff; }
         .btn-danger:hover { background: #f85149; }
         .btn-sm { padding: 4px 12px; font-size: 12px; }
@@ -135,17 +148,17 @@
         th, td {
             padding: 12px;
             text-align: left;
-            border-bottom: 1px solid #30363d;
+            border-bottom: 1px solid var(--border-color);
         }
         
         th {
             font-weight: 600;
-            color: #8b949e;
+            color: var(--text-muted-color);
             font-size: 12px;
             text-transform: uppercase;
         }
         
-        tr:hover { background: #0d1117; }
+        tr:hover { background: var(--bg-color); }
         
         .status {
             display: inline-block;
@@ -155,21 +168,21 @@
             font-weight: 500;
         }
         
-        .status-running { background: #1f2d1f; color: #3fb950; }
-        .status-exited { background: #2d1b1e; color: #f85149; }
-        .status-expired { background: #3d2e00; color: #f0b72f; }
-        .status-created { background: #1f2d3d; color: #58a6ff; }
+        .status-running { background: #1f2d1f; color: var(--success-color); }
+        .status-exited { background: #2d1b1e; color: var(--danger-color); }
+        .status-expired { background: #3d2e00; color: var(--warning-color); }
+        .status-created { background: #1f2d3d; color: var(--primary-color); }
         
         .actions { display: flex; gap: 4px; flex-wrap: wrap; }
         
         .empty-state {
             text-align: center;
             padding: 48px 16px;
-            color: #8b949e;
+            color: var(--text-muted-color);
         }
         
         code {
-            background: #0d1117;
+            background: var(--bg-color);
             padding: 2px 6px;
             border-radius: 3px;
             font-size: 12px;
@@ -178,7 +191,7 @@
         
         .help-text {
             font-size: 12px;
-            color: #8b949e;
+            color: var(--text-muted-color);
             margin-top: 4px;
         }
         
@@ -189,23 +202,23 @@
         }
         
         .host-card {
-            background: #0d1117;
-            border: 1px solid #30363d;
+            background: var(--bg-color);
+            border: 1px solid var(--border-color);
             border-radius: 6px;
             padding: 16px;
         }
         
         .host-card h3 { margin-bottom: 8px; font-size: 16px; }
-        .host-card p { font-size: 13px; color: #8b949e; margin-bottom: 4px; }
+        .host-card p { font-size: 13px; color: var(--text-muted-color); margin-bottom: 4px; }
         .host-card .btn-group { display: flex; gap: 8px; margin-top: 12px; }
         
         input[type="date"], input[type="datetime-local"] {
             width: 100%;
             padding: 8px 12px;
-            background: #0d1117;
-            border: 1px solid #30363d;
+            background: var(--input-bg-color);
+            border: 1px solid var(--border-color);
             border-radius: 6px;
-            color: #e6edf3;
+            color: var(--text-color);
             font-size: 14px;
             font-family: inherit;
         }
@@ -331,7 +344,7 @@
                 <span>👤 {{ current_user.username }}</span>
                 {% endif %}
                 <span>|</span>
-                <select id="theme-selector" style="padding: 4px 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; color: #e6edf3; font-size: 13px; cursor: pointer;">
+                <select id="theme-selector" style="padding: 4px 8px; background: var(--input-bg-color); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-color); font-size: 13px; cursor: pointer;">
                     <option value="dark">🌙 Dark</option>
                     <option value="light">☀️ Light</option>
                 </select>
@@ -392,10 +405,10 @@
     <style>
         .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }
         .modal.active { display: flex; }
-        .modal-content { background: #161b22; border: 1px solid #30363d; border-radius: 6px; max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto; }
-        .modal-header { padding: 16px; border-bottom: 1px solid #30363d; font-weight: 600; }
+        .modal-content { background: var(--card-bg-color); border: 1px solid var(--border-color); border-radius: 6px; max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto; }
+        .modal-header { padding: 16px; border-bottom: 1px solid var(--border-color); font-weight: 600; }
         .modal-body { padding: 16px; }
-        .modal-footer { padding: 16px; border-top: 1px solid #30363d; display: flex; gap: 8px; justify-content: flex-end; }
+        .modal-footer { padding: 16px; border-top: 1px solid var(--border-color); display: flex; gap: 8px; justify-content: flex-end; }
     </style>
 
     <!-- Logs Modal -->
@@ -403,7 +416,7 @@
         <div class="modal-content" style="max-width: 800px;">
             <div class="modal-header">Container Logs</div>
             <div class="modal-body">
-                <pre id="logs-content" style="background: #0d1117; padding: 12px; border-radius: 6px; font-size: 12px; overflow-x: auto; color: #3fb950;"></pre>
+                <pre id="logs-content" style="background: var(--bg-color); padding: 12px; border-radius: 6px; font-size: 12px; overflow-x: auto; color: var(--success-color);"></pre>
             </div>
             <div class="modal-footer">
                 <button onclick="closeLogsModal()" class="btn btn-secondary">Close</button>
@@ -416,44 +429,44 @@
         <div class="modal-content" style="max-width: 600px;">
             <div class="modal-header"><span class="icon-stats"></span> Host Statistics</div>
             <div class="modal-body">
-                <div id="stats-loading" style="text-align: center; padding: 24px; color: #8b949e;">Loading statistics...</div>
+                <div id="stats-loading" style="text-align: center; padding: 24px; color: var(--text-muted-color);">Loading statistics...</div>
                 <div id="stats-content" style="display: none;">
                     <div style="margin-bottom: 16px;">
-                        <h3 style="font-size: 14px; color: #8b949e; margin-bottom: 8px; text-transform: uppercase;">System Info</h3>
+                        <h3 style="font-size: 14px; color: var(--text-muted-color); margin-bottom: 8px; text-transform: uppercase;">System Info</h3>
                         <p style="margin-bottom: 4px;"><strong>Docker Version:</strong> <span id="stat-docker-version"></span></p>
                         <p style="margin-bottom: 4px;"><strong>OS:</strong> <span id="stat-os"></span></p>
                         <p style="margin-bottom: 4px;"><strong>Architecture:</strong> <span id="stat-arch"></span></p>
                     </div>
                     
                     <div style="margin-bottom: 16px;">
-                        <h3 style="font-size: 14px; color: #8b949e; margin-bottom: 8px; text-transform: uppercase;">CPU</h3>
+                        <h3 style="font-size: 14px; color: var(--text-muted-color); margin-bottom: 8px; text-transform: uppercase;">CPU</h3>
                         <p><strong>Cores:</strong> <span id="stat-cpu-cores"></span></p>
                     </div>
                     
                     <div style="margin-bottom: 16px;">
-                        <h3 style="font-size: 14px; color: #8b949e; margin-bottom: 8px; text-transform: uppercase;">Memory (RAM)</h3>
+                        <h3 style="font-size: 14px; color: var(--text-muted-color); margin-bottom: 8px; text-transform: uppercase;">Memory (RAM)</h3>
                         <p style="margin-bottom: 4px;"><strong>Total:</strong> <span id="stat-mem-total"></span> GB</p>
                         <p style="margin-bottom: 4px;"><strong>Used:</strong> <span id="stat-mem-used"></span> GB</p>
-                        <div style="background: #0d1117; height: 20px; border-radius: 4px; overflow: hidden; margin-top: 8px;">
-                            <div id="stat-mem-bar" style="height: 100%; background: linear-gradient(90deg, #3fb950, #f0b72f); transition: width 0.3s;"></div>
+                        <div style="background: var(--bg-color); height: 20px; border-radius: 4px; overflow: hidden; margin-top: 8px;">
+                            <div id="stat-mem-bar" style="height: 100%; background: linear-gradient(90deg, var(--success-color), var(--warning-color)); transition: width 0.3s;"></div>
                         </div>
                     </div>
                     
                     <div style="margin-bottom: 16px;">
-                        <h3 style="font-size: 14px; color: #8b949e; margin-bottom: 8px; text-transform: uppercase;">Disk Usage</h3>
+                        <h3 style="font-size: 14px; color: var(--text-muted-color); margin-bottom: 8px; text-transform: uppercase;">Disk Usage</h3>
                         <p><strong>Used by Docker:</strong> <span id="stat-disk-used"></span> GB</p>
                     </div>
                     
                     <div>
-                        <h3 style="font-size: 14px; color: #8b949e; margin-bottom: 8px; text-transform: uppercase;">Containers</h3>
+                        <h3 style="font-size: 14px; color: var(--text-muted-color); margin-bottom: 8px; text-transform: uppercase;">Containers</h3>
                         <p style="margin-bottom: 4px;"><strong>Total:</strong> <span id="stat-containers-total"></span></p>
-                        <p style="margin-bottom: 4px;"><strong>Running:</strong> <span id="stat-containers-running" style="color: #3fb950;"></span></p>
-                        <p style="margin-bottom: 4px;"><strong>Stopped:</strong> <span id="stat-containers-stopped" style="color: #f85149;"></span></p>
-                        <p style="margin-bottom: 4px;"><strong>Paused:</strong> <span id="stat-containers-paused" style="color: #f0b72f;"></span></p>
+                        <p style="margin-bottom: 4px;"><strong>Running:</strong> <span id="stat-containers-running" style="color: var(--success-color);"></span></p>
+                        <p style="margin-bottom: 4px;"><strong>Stopped:</strong> <span id="stat-containers-stopped" style="color: var(--danger-color);"></span></p>
+                        <p style="margin-bottom: 4px;"><strong>Paused:</strong> <span id="stat-containers-paused" style="color: var(--warning-color);"></span></p>
                     </div>
                     
                     <div style="margin-top: 16px;">
-                        <h3 style="font-size: 14px; color: #8b949e; margin-bottom: 8px; text-transform: uppercase;">Images</h3>
+                        <h3 style="font-size: 14px; color: var(--text-muted-color); margin-bottom: 8px; text-transform: uppercase;">Images</h3>
                         <p><strong>Total Images:</strong> <span id="stat-images"></span></p>
                     </div>
                 </div>
@@ -550,12 +563,14 @@
                 'dark': {
                     bg: '#0d1117', cardBg: '#161b22', border: '#30363d', 
                     text: '#e6edf3', textMuted: '#8b949e', primary: '#58a6ff',
-                    success: '#3fb950', danger: '#f85149', warning: '#f0b72f'
+                    success: '#3fb950', danger: '#f85149', warning: '#f0b72f',
+                    inputBg: '#0d1117'
                 },
                 'light': {
                     bg: '#ffffff', cardBg: '#f6f8fa', border: '#d0d7de',
                     text: '#24292f', textMuted: '#57606a', primary: '#0969da',
-                    success: '#1a7f37', danger: '#cf222e', warning: '#9a6700'
+                    success: '#1a7f37', danger: '#cf222e', warning: '#9a6700',
+                    inputBg: '#ffffff'
                 }
             };
             
@@ -569,10 +584,7 @@
             document.documentElement.style.setProperty('--success-color', t.success);
             document.documentElement.style.setProperty('--danger-color', t.danger);
             document.documentElement.style.setProperty('--warning-color', t.warning);
-            
-            // Apply theme to body and elements
-            document.body.style.background = t.bg;
-            document.body.style.color = t.text;
+            document.documentElement.style.setProperty('--input-bg-color', t.inputBg);
         }
         
         async function refreshContainers() {
