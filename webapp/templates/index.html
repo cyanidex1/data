@@ -579,26 +579,34 @@
             
             // Initialize theme toggle
             const themeToggle = document.getElementById('theme-toggle');
-            const currentTheme = '{{ current_user.theme }}' || 'dark';
+            // Check localStorage first for site-wide theme persistence, then fall back to user preference
+            const storedTheme = localStorage.getItem('theme');
+            const userTheme = '{{ current_user.theme }}' || 'dark';
+            const currentTheme = storedTheme || userTheme;
             themeToggle.checked = currentTheme === 'light';
             applyTheme(currentTheme);
             
+            // If we loaded from user preference and it's different from localStorage, save it
+            if (!storedTheme && userTheme) {
+                localStorage.setItem('theme', userTheme);
+            }
+            
             themeToggle.addEventListener('change', async function() {
                 const theme = this.checked ? 'light' : 'dark';
+                // Save theme to localStorage for immediate site-wide persistence
+                localStorage.setItem('theme', theme);
+                applyTheme(theme);
+                
+                // Also save to server for authenticated user preference persistence
                 try {
-                    const response = await fetch('/api/theme', {
+                    await fetch('/api/theme', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({ theme: theme })
                     });
-                    if (response.ok) {
-                        applyTheme(theme);
-                        showAlert('Theme updated successfully', 'success');
-                    } else {
-                        showAlert('Failed to update theme', 'error');
-                    }
                 } catch (error) {
-                    showAlert('Error updating theme: ' + error.message, 'error');
+                    // Silently ignore server errors - theme is already applied locally
+                    console.error('Error saving theme to server:', error);
                 }
             });
         });
@@ -628,12 +636,23 @@
                 if (hostSelect) {
                     hostSelect.innerHTML = '<option value="">Select a host...</option>';
                     
+                    let localDockerHost = null;
                     data.hosts.forEach(host => {
                         const option = document.createElement('option');
                         option.value = host.id;
                         option.textContent = host.name;
                         hostSelect.appendChild(option);
+                        
+                        // Check for local docker host (url is 'local')
+                        if (host.url === 'local') {
+                            localDockerHost = host;
+                        }
                     });
+                    
+                    // Select local docker host by default if it exists
+                    if (localDockerHost) {
+                        hostSelect.value = localDockerHost.id;
+                    }
                 }
             } catch (error) {
                 console.error('Error loading hosts:', error);
