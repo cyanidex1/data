@@ -53,10 +53,10 @@
         }
         
         .header-title { font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
-        .header-title::before { content: '⬡'; color: #58a6ff; font-size: 24px; }
+        .header-title::before { content: '⬡'; color: #58a6ff; font-size: 30px; } /* Increased from 24px to 30px */
         .header-user { font-size: 14px; color: #8b949e; display: flex; gap: 12px; align-items: center; }
-        .header-user a { color: #2f81f7; text-decoration: none; }
-        .header-user a:hover { text-decoration: underline; }
+        .header-user a, .header-user .username-link { color: #2f81f7; text-decoration: none; cursor: pointer; }
+        .header-user a:hover, .header-user .username-link:hover { text-decoration: underline; }
         
         .container { max-width: 1280px; margin: 0 auto; padding: 24px 16px; }
         
@@ -223,7 +223,22 @@
                 Datagram Control Panel
             </div>
             <div class="header-user">
+                {% if current_user.is_admin() %}
+                <a href="{{ url_for('admin_panel') }}" class="username-link">👤 {{ current_user.username }}</a>
+                {% else %}
                 <span>👤 {{ current_user.username }}</span>
+                {% endif %}
+                <span>|</span>
+                <select id="theme-selector" style="padding: 4px 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; color: #e6edf3; font-size: 13px; cursor: pointer;">
+                    <option value="dark">🌙 Dark</option>
+                    <option value="light">☀️ Light</option>
+                    <option value="dracula">🧛 Dracula</option>
+                    <option value="nord">❄️ Nord</option>
+                    <option value="solarized-dark">🌊 Solarized Dark</option>
+                    <option value="solarized-light">🌅 Solarized Light</option>
+                    <option value="monokai">🎨 Monokai</option>
+                    <option value="gruvbox">🍂 Gruvbox</option>
+                </select>
                 <span>|</span>
                 <a href="{{ url_for('change_password') }}">Change Password</a>
                 <a href="{{ url_for('logout') }}">Logout</a>
@@ -243,9 +258,7 @@
                         <label for="host-select">Docker Host</label>
                         <select id="host-select" required>
                             <option value="">Select a host...</option>
-                            {% for host in hosts %}
-                            <option value="{{ host.id }}">{{ host.name }}</option>
-                            {% endfor %}
+                            <!-- Hosts loaded dynamically -->
                         </select>
                     </div>
                     <div class="form-group">
@@ -275,35 +288,6 @@
             <div id="containers-loading" style="padding: 24px; text-align: center; color: #8b949e;">Loading containers...</div>
             <div id="containers-list"></div>
         </div>
-
-        <!-- Docker Hosts -->
-        <div class="card">
-            <div class="card-header">
-                <span class="icon-host"></span> Docker Hosts
-                <button onclick="showAddHostModal()" class="btn btn-primary btn-sm"><span class="icon-add"></span> Add Host</button>
-            </div>
-            <div class="card-body">
-                <div class="grid">
-                    {% for host in hosts %}
-                    <div class="host-card">
-                        <h3>{{ host.name }}</h3>
-                        <p><strong>URL:</strong> <code>{{ host.url }}</code></p>
-                        {% if host.description %}
-                        <p><strong>Description:</strong> {{ host.description }}</p>
-                        {% endif %}
-                        <p style="font-size: 11px; margin-top: 8px;">Added: {{ host.added_at[:19] }}</p>
-                        <div class="btn-group">
-                            <button onclick="showHostStats({{ host.id }})" class="btn btn-secondary btn-sm"><span class="icon-stats"></span> Stats</button>
-                            <button onclick="removeHost({{ host.id }})" class="btn btn-danger btn-sm"><span class="icon-remove"></span> Remove</button>
-                        </div>
-                    </div>
-                    {% endfor %}
-                    {% if hosts|length == 0 %}
-                    <div class="empty-state" style="grid-column: 1/-1;">No hosts configured. Add one to get started.</div>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
     </div>
 
     <!-- Modal styles -->
@@ -315,34 +299,6 @@
         .modal-body { padding: 16px; }
         .modal-footer { padding: 16px; border-top: 1px solid #30363d; display: flex; gap: 8px; justify-content: flex-end; }
     </style>
-
-    <!-- Add Host Modal -->
-    <div id="add-host-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">Add Docker Host</div>
-            <form id="add-host-form">
-                <div class="modal-body">
-                    <div class="form-group">
-                        <label for="host-name">Name</label>
-                        <input type="text" id="host-name" placeholder="e.g., Production Server" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="host-url">URL</label>
-                        <input type="text" id="host-url" placeholder="e.g., tcp://192.168.1.100:2375 or 'local'" required>
-                        <div class="help-text">Use 'local' for local Docker or tcp://host:port for remote</div>
-                    </div>
-                    <div class="form-group">
-                        <label for="host-description">Description (optional)</label>
-                        <input type="text" id="host-description" placeholder="Description of this host">
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" onclick="closeAddHostModal()" class="btn btn-secondary">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Add Host</button>
-                </div>
-            </form>
-        </div>
-    </div>
 
     <!-- Logs Modal -->
     <div id="logs-modal" class="modal">
@@ -414,6 +370,7 @@
         let refreshInterval;
         
         document.addEventListener('DOMContentLoaded', function() {
+            loadHosts();
             refreshContainers();
             refreshInterval = setInterval(refreshContainers, 10000);
             
@@ -422,9 +379,28 @@
                 startContainer();
             });
             
-            document.getElementById('add-host-form').addEventListener('submit', function(e) {
-                e.preventDefault();
-                addHost();
+            // Initialize theme selector
+            const themeSelector = document.getElementById('theme-selector');
+            themeSelector.value = '{{ current_user.theme }}' || 'dark';
+            applyTheme(themeSelector.value);
+            
+            themeSelector.addEventListener('change', async function() {
+                const theme = this.value;
+                try {
+                    const response = await fetch('/api/theme', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ theme: theme })
+                    });
+                    if (response.ok) {
+                        applyTheme(theme);
+                        showAlert('Theme updated successfully', 'success');
+                    } else {
+                        showAlert('Failed to update theme', 'error');
+                    }
+                } catch (error) {
+                    showAlert('Error updating theme: ' + error.message, 'error');
+                }
             });
         });
         
@@ -435,6 +411,86 @@
             alert.textContent = message;
             alertsDiv.appendChild(alert);
             setTimeout(() => alert.remove(), 5000);
+        }
+        
+        async function loadHosts() {
+            try {
+                const response = await fetch('/api/hosts');
+                const data = await response.json();
+                
+                const hostSelect = document.getElementById('host-select');
+                hostSelect.innerHTML = '<option value="">Select a host...</option>';
+                
+                data.hosts.forEach(host => {
+                    const option = document.createElement('option');
+                    option.value = host.id;
+                    option.textContent = host.name;
+                    hostSelect.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Error loading hosts:', error);
+                showAlert('Error loading hosts: ' + error.message, 'error');
+            }
+        }
+        
+        function applyTheme(theme) {
+            const themes = {
+                'dark': {
+                    bg: '#0d1117', cardBg: '#161b22', border: '#30363d', 
+                    text: '#e6edf3', textMuted: '#8b949e', primary: '#58a6ff',
+                    success: '#3fb950', danger: '#f85149', warning: '#f0b72f'
+                },
+                'light': {
+                    bg: '#ffffff', cardBg: '#f6f8fa', border: '#d0d7de',
+                    text: '#24292f', textMuted: '#57606a', primary: '#0969da',
+                    success: '#1a7f37', danger: '#cf222e', warning: '#9a6700'
+                },
+                'dracula': {
+                    bg: '#282a36', cardBg: '#44475a', border: '#6272a4',
+                    text: '#f8f8f2', textMuted: '#6272a4', primary: '#bd93f9',
+                    success: '#50fa7b', danger: '#ff5555', warning: '#f1fa8c'
+                },
+                'nord': {
+                    bg: '#2e3440', cardBg: '#3b4252', border: '#4c566a',
+                    text: '#eceff4', textMuted: '#81a1c1', primary: '#88c0d0',
+                    success: '#a3be8c', danger: '#bf616a', warning: '#ebcb8b'
+                },
+                'solarized-dark': {
+                    bg: '#002b36', cardBg: '#073642', border: '#586e75',
+                    text: '#839496', textMuted: '#586e75', primary: '#268bd2',
+                    success: '#859900', danger: '#dc322f', warning: '#b58900'
+                },
+                'solarized-light': {
+                    bg: '#fdf6e3', cardBg: '#eee8d5', border: '#93a1a1',
+                    text: '#657b83', textMuted: '#93a1a1', primary: '#268bd2',
+                    success: '#859900', danger: '#dc322f', warning: '#b58900'
+                },
+                'monokai': {
+                    bg: '#272822', cardBg: '#3e3d32', border: '#75715e',
+                    text: '#f8f8f2', textMuted: '#75715e', primary: '#66d9ef',
+                    success: '#a6e22e', danger: '#f92672', warning: '#e6db74'
+                },
+                'gruvbox': {
+                    bg: '#282828', cardBg: '#3c3836', border: '#504945',
+                    text: '#ebdbb2', textMuted: '#a89984', primary: '#83a598',
+                    success: '#b8bb26', danger: '#fb4934', warning: '#fabd2f'
+                }
+            };
+            
+            const t = themes[theme] || themes.dark;
+            document.documentElement.style.setProperty('--bg-color', t.bg);
+            document.documentElement.style.setProperty('--card-bg-color', t.cardBg);
+            document.documentElement.style.setProperty('--border-color', t.border);
+            document.documentElement.style.setProperty('--text-color', t.text);
+            document.documentElement.style.setProperty('--text-muted-color', t.textMuted);
+            document.documentElement.style.setProperty('--primary-color', t.primary);
+            document.documentElement.style.setProperty('--success-color', t.success);
+            document.documentElement.style.setProperty('--danger-color', t.danger);
+            document.documentElement.style.setProperty('--warning-color', t.warning);
+            
+            // Apply theme to body and elements
+            document.body.style.background = t.bg;
+            document.body.style.color = t.text;
         }
         
         async function refreshContainers() {
@@ -475,12 +531,12 @@
                                         <td>
                                             <div class="actions">
                                                 ${c.status !== 'running' && c.status !== 'expired' ? 
-                                                    `<button onclick="startExistingContainer('${c.host_id}', '${c.id}')" class="btn btn-primary btn-sm"><span class="icon-play"></span></button>` : 
-                                                    c.status === 'running' ? `<button onclick="stopContainer('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm"><span class="icon-stop"></span></button>` : ''
+                                                    `<button onclick="startExistingContainer('${c.host_id}', '${c.id}')" class="btn btn-primary btn-sm"><span class="icon-play"></span> Start</button>` : 
+                                                    c.status === 'running' ? `<button onclick="stopContainer('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm"><span class="icon-stop"></span> Stop</button>` : ''
                                                 }
-                                                ${c.status !== 'expired' ? `<button onclick="restartContainer('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm"><span class="icon-restart"></span></button>` : ''}
-                                                <button onclick="removeContainer('${c.host_id}', '${c.id}')" class="btn btn-danger btn-sm"><span class="icon-remove"></span></button>
-                                                <button onclick="showLogs('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm"><span class="icon-logs"></span></button>
+                                                ${c.status !== 'expired' ? `<button onclick="restartContainer('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm"><span class="icon-restart"></span> Restart</button>` : ''}
+                                                <button onclick="removeContainer('${c.host_id}', '${c.id}')" class="btn btn-danger btn-sm"><span class="icon-remove"></span> Remove</button>
+                                                <button onclick="showLogs('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm"><span class="icon-logs"></span> Logs</button>
                                             </div>
                                         </td>
                                     </tr>
@@ -688,64 +744,9 @@
             document.getElementById('logs-modal').classList.remove('active');
         }
         
-        function showAddHostModal() {
-            document.getElementById('add-host-modal').classList.add('active');
-        }
-        
-        function closeAddHostModal() {
-            document.getElementById('add-host-modal').classList.remove('active');
-            document.getElementById('add-host-form').reset();
-        }
-        
-        async function addHost() {
-            const name = document.getElementById('host-name').value;
-            const url = document.getElementById('host-url').value;
-            const description = document.getElementById('host-description').value;
-            
-            try {
-                const response = await fetch('/api/hosts', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ name, url, description })
-                });
-                
-                const data = await response.json();
-                
-                if (response.ok) {
-                    showAlert('Host added successfully!', 'success');
-                    closeAddHostModal();
-                    location.reload();
-                } else {
-                    showAlert('Error: ' + data.error, 'error');
-                }
-            } catch (error) {
-                showAlert('Error adding host: ' + error.message, 'error');
-            }
-        }
-        
-        async function removeHost(hostId) {
-            if (!confirm('Remove this Docker host? This will not affect running containers.')) return;
-            
-            try {
-                const response = await fetch(`/api/hosts/${hostId}`, { method: 'DELETE' });
-                const data = await response.json();
-                
-                if (response.ok) {
-                    showAlert('Host removed', 'success');
-                    location.reload();
-                } else {
-                    showAlert('Error: ' + data.error, 'error');
-                }
-            } catch (error) {
-                showAlert('Error: ' + error.message, 'error');
-            }
-        }
-        
         window.onclick = function(event) {
-            const hostModal = document.getElementById('add-host-modal');
             const logsModal = document.getElementById('logs-modal');
             const statsModal = document.getElementById('stats-modal');
-            if (event.target === hostModal) closeAddHostModal();
             if (event.target === logsModal) closeLogsModal();
             if (event.target === statsModal) closeStatsModal();
         }

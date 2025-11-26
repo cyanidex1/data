@@ -36,14 +36,25 @@ DEFAULT_IMAGE = 'datagram'
 class User(UserMixin):
     """User model for authentication"""
     
-    def __init__(self, id, username, password_hash, password_changed=False):
+    def __init__(self, id, username, password_hash, password_changed=False, role='admin', theme='dark'):
         self.id = id
         self.username = username
         self.password_hash = password_hash
         self.password_changed = password_changed
+        self.role = role  # 'viewer', 'editor', 'admin'
+        self.theme = theme  # User's theme preference
     
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+    
+    def can_view(self):
+        return self.role in ['viewer', 'editor', 'admin']
+    
+    def can_edit(self):
+        return self.role in ['editor', 'admin']
+    
+    def is_admin(self):
+        return self.role == 'admin'
 
 
 class UserManager:
@@ -57,7 +68,7 @@ class UserManager:
         if not self.users:
             default_username = os.environ.get('ADMIN_USERNAME', 'admin')
             default_password = os.environ.get('ADMIN_PASSWORD', 'admin')
-            self.add_user(default_username, default_password)
+            self.add_user(default_username, default_password, password_changed=False, role='admin')
             print(f"[*] Created default admin user: {default_username} / {default_password}")
             print("[!] IMPORTANT: Change the default password immediately!")
     
@@ -67,7 +78,14 @@ class UserManager:
             try:
                 with open(self.users_file, 'r') as f:
                     data = json.load(f)
-                    return {u['id']: User(u['id'], u['username'], u['password_hash'], u.get('password_changed', False)) for u in data}
+                    return {u['id']: User(
+                        u['id'], 
+                        u['username'], 
+                        u['password_hash'], 
+                        u.get('password_changed', False),
+                        u.get('role', 'admin'),
+                        u.get('theme', 'dark')
+                    ) for u in data}
             except Exception as e:
                 print(f"Error loading users: {e}")
                 return {}
@@ -76,16 +94,22 @@ class UserManager:
     def save_users(self):
         """Save users to configuration file"""
         os.makedirs(os.path.dirname(self.users_file), exist_ok=True)
-        data = [{'id': user.id, 'username': user.username, 'password_hash': user.password_hash, 'password_changed': user.password_changed} 
-                for user in self.users.values()]
+        data = [{
+            'id': user.id, 
+            'username': user.username, 
+            'password_hash': user.password_hash, 
+            'password_changed': user.password_changed,
+            'role': user.role,
+            'theme': user.theme
+        } for user in self.users.values()]
         with open(self.users_file, 'w') as f:
             json.dump(data, f, indent=2)
     
-    def add_user(self, username, password, password_changed=False):
+    def add_user(self, username, password, password_changed=False, role='viewer'):
         """Add a new user"""
         user_id = len(self.users) + 1
         password_hash = generate_password_hash(password)
-        user = User(user_id, username, password_hash, password_changed)
+        user = User(user_id, username, password_hash, password_changed, role)
         self.users[user_id] = user
         self.save_users()
         return user
@@ -107,6 +131,23 @@ class UserManager:
         if user:
             user.password_hash = generate_password_hash(new_password)
             user.password_changed = True
+            self.save_users()
+            return True
+        return False
+    
+    def delete_user(self, user_id):
+        """Delete a user"""
+        if user_id in self.users:
+            del self.users[user_id]
+            self.save_users()
+            return True
+        return False
+    
+    def update_theme(self, user_id, theme):
+        """Update user theme preference"""
+        user = self.users.get(user_id)
+        if user:
+            user.theme = theme
             self.save_users()
             return True
         return False
@@ -264,11 +305,107 @@ def change_password():
     return render_template('change_password.html', force=force)
 
 
+@app.route('/admin')
+@login_required
+def admin_panel():
+    """Admin panel page - only accessible to admins"""
+    if not current_user.is_admin():
+        flash('Access denied. Admin privileges required.', 'error')
+        return redirect(url_for('index'))
+    return render_template('admin.html', 
+                         hosts=host_manager.hosts, 
+                         users=list(user_manager.users.values()))
+
+
+@app.route('/api/users', methods=['GET'])
+@login_required
+def list_users():
+    """List all users - admin only"""
+    if not current_user.is_admin():
+        return jsonify({'error': 'Admin privileges required'}), 403
+    
+    users_list = [{
+        'id': user.id,
+        'username': user.username,
+        'role': user.role,
+        'password_changed': user.password_changed
+    } for user in user_manager.users.values()]
+    
+    return jsonify({'users': users_list})
+
+
+@app.route('/api/users', methods=['POST'])
+@login_required
+def create_user():
+    """Create a new user - admin only"""
+    if not current_user.is_admin():
+        return jsonify({'error': 'Admin privileges required'}), 403
+    
+    data = request.json
+    username = data.get('username')
+    password = data.get('password')
+    role = data.get('role', 'viewer')
+    
+    if not username or not password:
+        return jsonify({'error': 'Username and password are required'}), 400
+    
+    if role not in ['viewer', 'editor', 'admin']:
+        return jsonify({'error': 'Invalid role. Must be viewer, editor, or admin'}), 400
+    
+    # Check if username already exists
+    if user_manager.get_user_by_username(username):
+        return jsonify({'error': 'Username already exists'}), 400
+    
+    user = user_manager.add_user(username, password, password_changed=True, role=role)
+    return jsonify({
+        'success': True,
+        'user': {
+            'id': user.id,
+            'username': user.username,
+            'role': user.role
+        }
+    })
+
+
+@app.route('/api/users/<int:user_id>', methods=['DELETE'])
+@login_required
+def delete_user(user_id):
+    """Delete a user - admin only"""
+    if not current_user.is_admin():
+        return jsonify({'error': 'Admin privileges required'}), 403
+    
+    # Prevent deleting yourself
+    if user_id == current_user.id:
+        return jsonify({'error': 'Cannot delete your own account'}), 400
+    
+    if user_manager.delete_user(user_id):
+        return jsonify({'success': True})
+    return jsonify({'error': 'User not found'}), 404
+
+
+@app.route('/api/theme', methods=['POST'])
+@login_required
+def update_theme():
+    """Update user theme preference"""
+    data = request.json
+    theme = data.get('theme')
+    
+    if not theme:
+        return jsonify({'error': 'Theme is required'}), 400
+    
+    if user_manager.update_theme(current_user.id, theme):
+        # Reload the user to get updated theme
+        current_user.theme = theme
+        return jsonify({'success': True, 'theme': theme})
+    return jsonify({'error': 'Failed to update theme'}), 500
+
+
 @app.route('/')
 @login_required
 def index():
     """Main dashboard page"""
-    return render_template('index.html', hosts=host_manager.hosts)
+    # Don't show hosts on main page anymore - they're in admin panel
+    return render_template('index.html')
 
 
 @app.route('/api/hosts', methods=['GET'])
@@ -281,7 +418,10 @@ def list_hosts():
 @app.route('/api/hosts', methods=['POST'])
 @login_required
 def add_host():
-    """Add a new Docker host"""
+    """Add a new Docker host - admin only"""
+    if not current_user.is_admin():
+        return jsonify({'error': 'Admin privileges required'}), 403
+    
     data = request.json
     name = data.get('name')
     url = data.get('url')
@@ -297,7 +437,10 @@ def add_host():
 @app.route('/api/hosts/<int:host_id>', methods=['DELETE'])
 @login_required
 def remove_host(host_id):
-    """Remove a Docker host"""
+    """Remove a Docker host - admin only"""
+    if not current_user.is_admin():
+        return jsonify({'error': 'Admin privileges required'}), 403
+    
     host_manager.remove_host(host_id)
     return jsonify({'success': True})
 
@@ -356,7 +499,10 @@ def list_containers():
 @app.route('/api/containers/start', methods=['POST'])
 @login_required
 def start_container():
-    """Start a new container with a given key"""
+    """Start a new container with a given key - requires edit permission"""
+    if not current_user.can_edit():
+        return jsonify({'error': 'Edit privileges required'}), 403
+    
     data = request.json
     host_id = data.get('host_id')
     key = data.get('key')
@@ -435,7 +581,9 @@ def start_container():
 @app.route('/api/containers/<host_id>/<container_id>/start', methods=['POST'])
 @login_required
 def start_existing_container(host_id, container_id):
-    """Start an existing container"""
+    """Start an existing container - requires edit permission"""
+    if not current_user.can_edit():
+        return jsonify({'error': 'Edit privileges required'}), 403
     try:
         client = host_manager.get_client(int(host_id))
         if not client:
@@ -451,7 +599,9 @@ def start_existing_container(host_id, container_id):
 @app.route('/api/containers/<host_id>/<container_id>/stop', methods=['POST'])
 @login_required
 def stop_container(host_id, container_id):
-    """Stop a running container"""
+    """Stop a running container - requires edit permission"""
+    if not current_user.can_edit():
+        return jsonify({'error': 'Edit privileges required'}), 403
     try:
         client = host_manager.get_client(int(host_id))
         if not client:
@@ -467,7 +617,9 @@ def stop_container(host_id, container_id):
 @app.route('/api/containers/<host_id>/<container_id>/restart', methods=['POST'])
 @login_required
 def restart_container(host_id, container_id):
-    """Restart a container"""
+    """Restart a container - requires edit permission"""
+    if not current_user.can_edit():
+        return jsonify({'error': 'Edit privileges required'}), 403
     try:
         client = host_manager.get_client(int(host_id))
         if not client:
@@ -483,7 +635,9 @@ def restart_container(host_id, container_id):
 @app.route('/api/containers/<host_id>/<container_id>/kill', methods=['POST'])
 @login_required
 def kill_container(host_id, container_id):
-    """Kill a running container"""
+    """Kill a running container - requires edit permission"""
+    if not current_user.can_edit():
+        return jsonify({'error': 'Edit privileges required'}), 403
     try:
         client = host_manager.get_client(int(host_id))
         if not client:
@@ -499,7 +653,9 @@ def kill_container(host_id, container_id):
 @app.route('/api/containers/<host_id>/<container_id>/remove', methods=['DELETE'])
 @login_required
 def remove_container(host_id, container_id):
-    """Remove a container"""
+    """Remove a container - requires edit permission"""
+    if not current_user.can_edit():
+        return jsonify({'error': 'Edit privileges required'}), 403
     try:
         client = host_manager.get_client(int(host_id))
         if not client:
