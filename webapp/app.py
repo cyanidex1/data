@@ -605,9 +605,9 @@ def get_host_stats(host_id):
             },
             'memory': {
                 'total': info.get('MemTotal', 0),
-                'used': info.get('MemTotal', 0) - info.get('MemFree', 0) if info.get('MemFree') else 0,
                 'total_gb': round(info.get('MemTotal', 0) / (1024**3), 2),
-                'used_gb': round((info.get('MemTotal', 0) - info.get('MemFree', 0)) / (1024**3), 2) if info.get('MemFree') else 0,
+                # Note: Docker info() doesn't provide current memory usage
+                # This shows total system memory available to Docker
             },
             'containers': {
                 'total': info.get('Containers', 0),
