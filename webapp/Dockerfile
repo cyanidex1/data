@@ -13,6 +13,10 @@ COPY templates/ templates/
 # Create data directory for persistent storage
 RUN mkdir -p /data
 
+# Add user to docker group for socket access (GID will be mapped from host)
+# This allows the container to communicate with Docker daemon
+RUN groupadd -g 999 docker || true
+
 # Expose port
 EXPOSE 5000
 
