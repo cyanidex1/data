@@ -468,7 +468,8 @@
         <div class="card">
             <div class="card-header">
                 <span class="icon-container"></span> Running Containers
-                <div style="display: flex; gap: 8px;">
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <input type="text" id="container-search" placeholder="Search containers..." style="width: 200px; padding: 6px 12px; font-size: 12px;" oninput="filterContainers()">
                     {% if can_edit %}
                     <button onclick="document.getElementById('import-file-input').click()" class="btn btn-secondary btn-sm"><span class="icon-add"></span> Import Keys</button>
                     <input type="file" id="import-file-input" accept=".csv" style="display: none;" onchange="importKeys(this)">
@@ -560,6 +561,7 @@
 
     <script>
         let refreshInterval;
+        let allContainers = []; // Store all containers for filtering
         const canEdit = {{ 'true' if can_edit else 'false' }};
         
         document.addEventListener('DOMContentLoaded', function() {
@@ -713,54 +715,90 @@
                 const data = await response.json();
                 
                 loadingDiv.style.display = 'none';
+                allContainers = data.containers; // Store all containers for filtering
                 
-                if (data.containers.length === 0) {
-                    listDiv.innerHTML = '<div class="empty-state">No containers running. Start one above!</div>';
-                } else {
-                    listDiv.innerHTML = `
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Host</th>
-                                    <th>Name</th>
-                                    <th>Status</th>
-                                    <th>Image</th>
-                                    <th>Key</th>
-                                    <th>Expiration</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${data.containers.map(c => `
-                                    <tr>
-                                        <td>${c.host_name}</td>
-                                        <td><code>${c.name}</code></td>
-                                        <td><span class="status status-${c.status}">${c.status}</span></td>
-                                        <td style="font-size: 12px; color: #8b949e;">${c.image}</td>
-                                        <td><code>${c.key || 'N/A'}</code></td>
-                                        <td style="font-size: 12px; color: #8b949e;">${c.expiration_date ? new Date(c.expiration_date).toLocaleString() : 'Never'}</td>
-                                        <td>
-                                            <div class="actions">
-                                                ${canEdit ? (
-                                                    c.status !== 'running' && c.status !== 'expired' ? 
-                                                        `<button onclick="startExistingContainer('${c.host_id}', '${c.id}')" class="btn btn-primary btn-sm"><span class="icon-play"></span> Start</button>` : 
-                                                        c.status === 'running' ? `<button onclick="stopContainer('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm"><span class="icon-stop"></span> Stop</button>` : ''
-                                                ) : ''}
-                                                ${canEdit && c.status !== 'expired' ? `<button onclick="restartContainer('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm"><span class="icon-restart"></span> Restart</button>` : ''}
-                                                ${canEdit ? `<button onclick="removeContainer('${c.host_id}', '${c.id}')" class="btn btn-danger btn-sm"><span class="icon-remove"></span> Remove</button>` : ''}
-                                                <button onclick="showLogs('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm"><span class="icon-logs"></span> Logs</button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    `;
-                }
+                renderContainers(allContainers);
             } catch (error) {
                 loadingDiv.style.display = 'none';
                 listDiv.innerHTML = '<div class="alert alert-error">Error loading containers: ' + error.message + '</div>';
             }
+        }
+        
+        function renderContainers(containers) {
+            const listDiv = document.getElementById('containers-list');
+            
+            if (containers.length === 0) {
+                const searchTerm = document.getElementById('container-search').value;
+                if (searchTerm && allContainers.length > 0) {
+                    listDiv.innerHTML = '<div class="empty-state">No containers match your search.</div>';
+                } else {
+                    listDiv.innerHTML = '<div class="empty-state">No containers running. Start one above!</div>';
+                }
+            } else {
+                listDiv.innerHTML = `
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Host</th>
+                                <th>Name</th>
+                                <th>Status</th>
+                                <th>Image</th>
+                                <th>Key</th>
+                                <th>Expiration</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${containers.map(c => `
+                                <tr>
+                                    <td>${c.host_name}</td>
+                                    <td><code>${c.name}</code></td>
+                                    <td><span class="status status-${c.status}">${c.status}</span></td>
+                                    <td style="font-size: 12px; color: #8b949e;">${c.image}</td>
+                                    <td><code>${c.key || 'N/A'}</code></td>
+                                    <td style="font-size: 12px; color: #8b949e;">${c.expiration_date ? new Date(c.expiration_date).toLocaleString() : 'Never'}</td>
+                                    <td>
+                                        <div class="actions">
+                                            ${canEdit ? (
+                                                c.status !== 'running' && c.status !== 'expired' ? 
+                                                    `<button onclick="startExistingContainer('${c.host_id}', '${c.id}')" class="btn btn-primary btn-sm"><span class="icon-play"></span> Start</button>` : 
+                                                    c.status === 'running' ? `<button onclick="stopContainer('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm"><span class="icon-stop"></span> Stop</button>` : ''
+                                            ) : ''}
+                                            ${canEdit && c.status !== 'expired' ? `<button onclick="restartContainer('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm"><span class="icon-restart"></span> Restart</button>` : ''}
+                                            ${canEdit ? `<button onclick="removeContainer('${c.host_id}', '${c.id}')" class="btn btn-danger btn-sm"><span class="icon-remove"></span> Remove</button>` : ''}
+                                            <button onclick="showLogs('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm"><span class="icon-logs"></span> Logs</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+            }
+        }
+        
+        function filterContainers() {
+            const searchTerm = document.getElementById('container-search').value.toLowerCase().trim();
+            
+            if (!searchTerm) {
+                renderContainers(allContainers);
+                return;
+            }
+            
+            const filtered = allContainers.filter(c => {
+                const searchableText = [
+                    c.host_name,
+                    c.name,
+                    c.status,
+                    c.image,
+                    c.key || '',
+                    c.expiration_date ? new Date(c.expiration_date).toLocaleString() : 'Never'
+                ].join(' ').toLowerCase();
+                
+                return searchableText.includes(searchTerm);
+            });
+            
+            renderContainers(filtered);
         }
         
         async function startContainer() {
