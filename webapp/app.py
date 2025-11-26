@@ -680,7 +680,10 @@ def remove_container(host_id, container_id):
 @app.route('/api/containers/<host_id>/<container_id>/logs', methods=['GET'])
 @login_required
 def get_container_logs(host_id, container_id):
-    """Get container logs"""
+    """Get container logs - requires view permission"""
+    if not current_user.can_view():
+        return jsonify({'error': 'View privileges required'}), 403
+    
     try:
         client = host_manager.get_client(int(host_id))
         if not client:
@@ -696,7 +699,10 @@ def get_container_logs(host_id, container_id):
 @app.route('/api/containers/export-keys', methods=['GET'])
 @login_required
 def export_keys():
-    """Export all container keys to CSV"""
+    """Export all container keys to CSV - requires view permission"""
+    if not current_user.can_view():
+        return jsonify({'error': 'View privileges required'}), 403
+    
     try:
         # Collect all keys from all hosts
         all_keys = []

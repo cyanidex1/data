@@ -187,6 +187,105 @@
             padding: 48px 16px;
             color: #8b949e;
         }
+        
+        /* Responsive Design for Mobile */
+        @media (max-width: 768px) {
+            .header-content {
+                flex-direction: column;
+                gap: 12px;
+                align-items: flex-start;
+            }
+            
+            .header-title {
+                font-size: 16px;
+            }
+            
+            .header-title::before {
+                font-size: 24px;
+            }
+            
+            .header-user {
+                flex-wrap: wrap;
+                font-size: 13px;
+                gap: 8px;
+            }
+            
+            .container {
+                padding: 12px 8px;
+            }
+            
+            .card-header {
+                flex-direction: column;
+                gap: 12px;
+                align-items: flex-start;
+            }
+            
+            .card-body {
+                padding: 12px;
+            }
+            
+            table {
+                font-size: 12px;
+                display: block;
+                overflow-x: auto;
+                white-space: nowrap;
+            }
+            
+            th, td {
+                padding: 8px 4px;
+            }
+            
+            .btn-sm {
+                padding: 6px 8px;
+                font-size: 11px;
+            }
+            
+            .modal-content {
+                width: 95%;
+                max-height: 80vh;
+            }
+            
+            .grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .host-card .btn-group {
+                flex-direction: column;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .header-title {
+                font-size: 14px;
+            }
+            
+            .header-title::before {
+                font-size: 20px;
+            }
+            
+            table {
+                font-size: 11px;
+            }
+            
+            th, td {
+                padding: 6px 2px;
+            }
+            
+            .btn {
+                padding: 6px 12px;
+                font-size: 12px;
+            }
+            
+            .btn-sm {
+                padding: 4px 6px;
+                font-size: 10px;
+            }
+            
+            .badge {
+                font-size: 10px;
+                padding: 1px 6px;
+            }
+        }
     </style>
 </head>
 <body>
