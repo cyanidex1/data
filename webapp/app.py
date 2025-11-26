@@ -52,19 +52,6 @@ class DockerHostManager:
     def add_host(self, name, url, description=''):
         """Add a new Docker host"""
         host = {
-            'id': len(self.hosts),
-            'name': name,
-            'url': url,
-            'description': description,
-            'added_at': datetime.now().isoformat()
-        }
-        self.hosts.append(host)
-        self.save_hosts()
-        return host
-    
-    def add_host(self, name, url, description=''):
-        """Add a new Docker host"""
-        host = {
             'id': self.next_id,
             'name': name,
             'url': url,
@@ -80,6 +67,8 @@ class DockerHostManager:
         """Remove a Docker host"""
         self.hosts = [h for h in self.hosts if h['id'] != host_id]
         self.save_hosts()
+    
+    def get_host(self, host_id):
         """Get a specific Docker host"""
         for host in self.hosts:
             if host['id'] == host_id:
