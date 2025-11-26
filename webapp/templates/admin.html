@@ -333,7 +333,7 @@
                             </td>
                             <td>{{ '✓' if user.password_changed else '✗' }}</td>
                             <td>
-                                <button onclick="showEditUserModal({{ user.id }}, '{{ user.username }}', '{{ user.role }}')" class="btn btn-secondary btn-sm">✎ Edit</button>
+                                <button onclick="showEditUserModal({{ user.id }}, {{ user.username|tojson }}, {{ user.role|tojson }})" class="btn btn-secondary btn-sm">✎ Edit</button>
                                 {% if user.id != current_user.id %}
                                 <button onclick="deleteUser({{ user.id }})" class="btn btn-danger btn-sm"><span class="icon-remove"></span> Delete</button>
                                 {% endif %}
@@ -363,7 +363,7 @@
                         <p style="font-size: 11px; margin-top: 8px;">Added: {{ host.added_at[:19] }}</p>
                         <div class="btn-group">
                             <button onclick="showHostStats({{ host.id }})" class="btn btn-secondary btn-sm"><span class="icon-stats"></span> Stats</button>
-                            <button onclick="showEditHostModal({{ host.id }}, '{{ host.name }}', '{{ host.url }}', '{{ host.description|default('', true) }}')" class="btn btn-secondary btn-sm">✎ Edit</button>
+                            <button onclick="showEditHostModal({{ host.id }}, {{ host.name|tojson }}, {{ host.url|tojson }}, {{ (host.description or '')|tojson }})" class="btn btn-secondary btn-sm">✎ Edit</button>
                             <button onclick="removeHost({{ host.id }})" class="btn btn-danger btn-sm"><span class="icon-remove"></span> Remove</button>
                         </div>
                     </div>

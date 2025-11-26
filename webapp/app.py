@@ -440,8 +440,8 @@ def update_user(user_id):
     if role and role not in ['viewer', 'editor', 'admin']:
         return jsonify({'error': 'Invalid role. Must be viewer, editor, or admin'}), 400
     
-    # Validate password if provided
-    if password is not None and len(password) > 0 and len(password) < 6:
+    # Validate password if provided (non-empty string with length < 6)
+    if password and len(password) < 6:
         return jsonify({'error': 'Password must be at least 6 characters'}), 400
     
     # Don't update password if empty string
