@@ -78,7 +78,7 @@
 </head>
 <body>
     <div class="login-container">
-        <div class="logo">🐳</div>
+        <div class="logo" style="color: #58a6ff;">⬡</div>
         <h1>Datagram Control Panel</h1>
         <p class="subtitle">Sign in to manage your containers</p>
         
@@ -104,12 +104,14 @@
             <button type="submit">Sign in</button>
         </form>
         
+        {% if show_default_creds %}
         <div class="default-creds">
-            <strong>⚠️ Default Credentials</strong>
+            <strong>⚠ Default Credentials</strong>
             Username: <code>admin</code><br>
             Password: <code>admin</code><br>
             <small style="display: block; margin-top: 8px; font-size: 12px;">Please change the password after first login!</small>
         </div>
+        {% endif %}
     </div>
 </body>
 </html>
