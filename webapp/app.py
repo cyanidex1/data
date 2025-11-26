@@ -4,7 +4,9 @@ Docker Control Panel for Datagram Nodes
 Web application for managing Docker containers across multiple hosts
 """
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from werkzeug.security import generate_password_hash, check_password_hash
 import docker
 import json
 import os
@@ -13,9 +15,103 @@ from datetime import datetime
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
+# Initialize Flask-Login
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+login_manager.login_message = 'Please log in to access the control panel.'
+
 # Store Docker hosts configuration
 HOSTS_FILE = '/data/docker_hosts.json'
+USERS_FILE = '/data/users.json'
 DEFAULT_IMAGE = 'datagram'
+
+
+class User(UserMixin):
+    """User model for authentication"""
+    
+    def __init__(self, id, username, password_hash):
+        self.id = id
+        self.username = username
+        self.password_hash = password_hash
+    
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+
+class UserManager:
+    """Manages user authentication"""
+    
+    def __init__(self, users_file):
+        self.users_file = users_file
+        self.users = self.load_users()
+        
+        # Create default admin user if no users exist
+        if not self.users:
+            default_username = os.environ.get('ADMIN_USERNAME', 'admin')
+            default_password = os.environ.get('ADMIN_PASSWORD', 'admin')
+            self.add_user(default_username, default_password)
+            print(f"[*] Created default admin user: {default_username} / {default_password}")
+            print("[!] IMPORTANT: Change the default password immediately!")
+    
+    def load_users(self):
+        """Load users from configuration file"""
+        if os.path.exists(self.users_file):
+            try:
+                with open(self.users_file, 'r') as f:
+                    data = json.load(f)
+                    return {u['id']: User(u['id'], u['username'], u['password_hash']) for u in data}
+            except Exception as e:
+                print(f"Error loading users: {e}")
+                return {}
+        return {}
+    
+    def save_users(self):
+        """Save users to configuration file"""
+        os.makedirs(os.path.dirname(self.users_file), exist_ok=True)
+        data = [{'id': user.id, 'username': user.username, 'password_hash': user.password_hash} 
+                for user in self.users.values()]
+        with open(self.users_file, 'w') as f:
+            json.dump(data, f, indent=2)
+    
+    def add_user(self, username, password):
+        """Add a new user"""
+        user_id = len(self.users) + 1
+        password_hash = generate_password_hash(password)
+        user = User(user_id, username, password_hash)
+        self.users[user_id] = user
+        self.save_users()
+        return user
+    
+    def get_user_by_id(self, user_id):
+        """Get user by ID"""
+        return self.users.get(user_id)
+    
+    def get_user_by_username(self, username):
+        """Get user by username"""
+        for user in self.users.values():
+            if user.username == username:
+                return user
+        return None
+    
+    def change_password(self, user_id, new_password):
+        """Change user password"""
+        user = self.users.get(user_id)
+        if user:
+            user.password_hash = generate_password_hash(new_password)
+            self.save_users()
+            return True
+        return False
+
+
+# Initialize user manager
+user_manager = UserManager(USERS_FILE)
+
+
+@login_manager.user_loader
+def load_user(user_id):
+    """Load user for Flask-Login"""
+    return user_manager.get_user_by_id(int(user_id))
 
 
 class DockerHostManager:
@@ -95,19 +191,76 @@ class DockerHostManager:
 host_manager = DockerHostManager(HOSTS_FILE)
 
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Login page"""
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        user = user_manager.get_user_by_username(username)
+        
+        if user and user.check_password(password):
+            login_user(user)
+            next_page = request.args.get('next')
+            return redirect(next_page if next_page else url_for('index'))
+        else:
+            flash('Invalid username or password', 'error')
+    
+    return render_template('login.html')
+
+
+@app.route('/logout')
+@login_required
+def logout():
+    """Logout user"""
+    logout_user()
+    flash('You have been logged out successfully', 'success')
+    return redirect(url_for('login'))
+
+
+@app.route('/change-password', methods=['GET', 'POST'])
+@login_required
+def change_password():
+    """Change password page"""
+    if request.method == 'POST':
+        current_password = request.form.get('current_password')
+        new_password = request.form.get('new_password')
+        confirm_password = request.form.get('confirm_password')
+        
+        if not current_user.check_password(current_password):
+            flash('Current password is incorrect', 'error')
+        elif new_password != confirm_password:
+            flash('New passwords do not match', 'error')
+        elif len(new_password) < 6:
+            flash('Password must be at least 6 characters', 'error')
+        else:
+            user_manager.change_password(current_user.id, new_password)
+            flash('Password changed successfully', 'success')
+            return redirect(url_for('index'))
+    
+    return render_template('change_password.html')
+
+
 @app.route('/')
+@login_required
 def index():
     """Main dashboard page"""
     return render_template('index.html', hosts=host_manager.hosts)
 
 
 @app.route('/api/hosts', methods=['GET'])
+@login_required
 def list_hosts():
     """List all Docker hosts"""
     return jsonify({'hosts': host_manager.hosts})
 
 
 @app.route('/api/hosts', methods=['POST'])
+@login_required
 def add_host():
     """Add a new Docker host"""
     data = request.json
@@ -123,6 +276,7 @@ def add_host():
 
 
 @app.route('/api/hosts/<int:host_id>', methods=['DELETE'])
+@login_required
 def remove_host(host_id):
     """Remove a Docker host"""
     host_manager.remove_host(host_id)
@@ -130,6 +284,7 @@ def remove_host(host_id):
 
 
 @app.route('/api/containers', methods=['GET'])
+@login_required
 def list_containers():
     """List all containers across all hosts"""
     all_containers = []
@@ -167,12 +322,12 @@ def list_containers():
 
 
 @app.route('/api/containers/start', methods=['POST'])
+@login_required
 def start_container():
     """Start a new container with a given key"""
     data = request.json
     host_id = data.get('host_id')
     key = data.get('key')
-    container_prefix = data.get('container_prefix', 'node')
     
     if not key or len(key) != 32:
         return jsonify({'error': 'Invalid key. Must be 32 characters'}), 400
@@ -185,14 +340,13 @@ def start_container():
         return jsonify({'error': 'Could not connect to Docker host'}), 500
     
     try:
-        # Find next available container name
+        # Use the key as the container name
+        container_name = key
+        
+        # Check if container with this name already exists
         existing_containers = client.containers.list(all=True)
-        index = 1
-        while True:
-            container_name = f"{container_prefix}{index}"
-            if not any(c.name == container_name for c in existing_containers):
-                break
-            index += 1
+        if any(c.name == container_name for c in existing_containers):
+            return jsonify({'error': f'Container with key "{key}" already exists'}), 400
         
         # Check if image exists, if not return error (user should build it on the host)
         try:
@@ -223,6 +377,7 @@ def start_container():
 
 
 @app.route('/api/containers/<host_id>/<container_id>/start', methods=['POST'])
+@login_required
 def start_existing_container(host_id, container_id):
     """Start an existing container"""
     try:
@@ -238,6 +393,7 @@ def start_existing_container(host_id, container_id):
 
 
 @app.route('/api/containers/<host_id>/<container_id>/stop', methods=['POST'])
+@login_required
 def stop_container(host_id, container_id):
     """Stop a running container"""
     try:
@@ -253,6 +409,7 @@ def stop_container(host_id, container_id):
 
 
 @app.route('/api/containers/<host_id>/<container_id>/restart', methods=['POST'])
+@login_required
 def restart_container(host_id, container_id):
     """Restart a container"""
     try:
@@ -268,6 +425,7 @@ def restart_container(host_id, container_id):
 
 
 @app.route('/api/containers/<host_id>/<container_id>/kill', methods=['POST'])
+@login_required
 def kill_container(host_id, container_id):
     """Kill a running container"""
     try:
@@ -283,6 +441,7 @@ def kill_container(host_id, container_id):
 
 
 @app.route('/api/containers/<host_id>/<container_id>/remove', methods=['DELETE'])
+@login_required
 def remove_container(host_id, container_id):
     """Remove a container"""
     try:
@@ -298,6 +457,7 @@ def remove_container(host_id, container_id):
 
 
 @app.route('/api/containers/<host_id>/<container_id>/logs', methods=['GET'])
+@login_required
 def get_container_logs(host_id, container_id):
     """Get container logs"""
     try:

@@ -2,6 +2,25 @@
 
 A web-based control panel for managing Docker containers running Datagram nodes across multiple Docker hosts.
 
+![Control Panel Screenshot](https://github.com/user-attachments/assets/87489b65-e330-411d-ab3b-15f8a3e1b131)
+
+## 🚀 Getting Started in 3 Steps
+
+### Step 1: Build the Datagram Image
+```bash
+docker build --platform linux/amd64 -t datagram .
+```
+
+### Step 2: Start the Control Panel
+```bash
+docker compose up -d
+```
+
+### Step 3: Access the Web Interface
+Open your browser and go to: **http://localhost:5000**
+
+That's it! You can now start managing your Datagram nodes through the web interface.
+
 ## Features
 
 - 🚀 **Start Containers**: Enter a 32-character key and start a new Datagram node container
@@ -12,7 +31,7 @@ A web-based control panel for managing Docker containers running Datagram nodes 
 - 🔄 **Auto-Refresh**: Dashboard automatically refreshes every 10 seconds
 - 🐳 **Docker Integration**: Works seamlessly with the existing `unhealthy.sh` cron job
 
-## Quick Start
+## Detailed Installation Guide
 
 ### Method 1: Using Docker Compose (Recommended)
 
@@ -52,16 +71,33 @@ A web-based control panel for managing Docker containers running Datagram nodes 
 3. **Access the web interface:**
    Open `http://localhost:5000`
 
-## Usage
+## 📖 Usage Guide
 
 ### Starting a New Container
 
-1. Select a Docker host from the dropdown
-2. Enter your 32-character Datagram key
-3. (Optional) Change the container name prefix
+**Via Web Interface:**
+1. Select a Docker host from the dropdown (e.g., "Local Docker")
+2. Enter your 32-character Datagram key (e.g., `92bcf2ae4e326968f40f8670a3596b80`)
+3. (Optional) Change the container name prefix from `node` to something else
 4. Click "Start Container"
 
 The control panel will automatically find the next available container name (e.g., `node1`, `node2`, etc.)
+
+**Via Command Line (existing method still works):**
+```bash
+./start.sh 92bcf2ae4e326968f40f8670a3596b80 node
+```
+
+**Via API:**
+```bash
+curl -X POST http://localhost:5000/api/containers/start \
+  -H "Content-Type: application/json" \
+  -d '{
+    "host_id": 0,
+    "key": "92bcf2ae4e326968f40f8670a3596b80",
+    "container_prefix": "node"
+  }'
+```
 
 ### Managing Docker Hosts
 
@@ -89,13 +125,28 @@ By default, a local Docker host is added automatically. This connects to the Doc
 
 ### Container Operations
 
-From the Running Containers table, you can:
+From the Running Containers table, you can perform these operations with a single click:
 - **Start**: Start a stopped container
-- **Stop**: Gracefully stop a running container
-- **Restart**: Restart a container
-- **Kill**: Forcefully stop a container
-- **Remove**: Delete a container (permanent)
+- **Stop**: Gracefully stop a running container (sends SIGTERM)
+- **Restart**: Restart a container (useful for applying changes)
+- **Kill**: Forcefully stop a container (sends SIGKILL)
+- **Remove**: Delete a container permanently (cannot be undone)
 - **Logs**: View the last 100 lines of container logs
+
+**Example Workflow:**
+1. Start multiple nodes with different keys
+2. Monitor their status in real-time
+3. Check logs if a node is misbehaving
+4. Restart unhealthy nodes
+5. Remove old/unused containers
+
+### Managing Multiple Containers
+
+**Best Practices:**
+- Use descriptive prefixes for different environments (e.g., `prod-`, `test-`)
+- Keep track of which keys are used for which containers
+- Regularly check the logs to ensure nodes are running correctly
+- Use the auto-refresh feature to monitor container health
 
 ### Existing Cron Job Integration
 
@@ -214,6 +265,122 @@ docker build --platform linux/amd64 -t datagram .
 4. **Limit Docker socket access** to trusted users only
 5. **Use Docker secrets** for sensitive configuration in production
 
+## 💡 Complete Example
+
+Here's a complete workflow from installation to running multiple nodes:
+
+```bash
+# 1. Clone the repository (if not already done)
+cd /path/to/data
+
+# 2. Build the datagram image
+docker build --platform linux/amd64 -t datagram .
+
+# 3. Start the control panel
+docker compose up -d
+
+# 4. Check that the control panel is running
+docker ps | grep datagram-control-panel
+
+# 5. Open the web interface
+# Navigate to http://localhost:5000 in your browser
+
+# 6. Start your first node
+# - Select "Local Docker" from the host dropdown
+# - Enter your 32-char key: 92bcf2ae4e326968f40f8670a3596b80
+# - Click "Start Container"
+
+# 7. Monitor the logs
+# Click the "Logs" button next to the container to see its output
+
+# 8. Start additional nodes with different keys
+# Repeat step 6 with different keys for each node
+
+# 9. (Optional) Stop the control panel when done
+docker compose down
+```
+
+### Example API Usage
+
+Start 3 containers programmatically:
+```bash
+for i in {1..3}; do
+  curl -X POST http://localhost:5000/api/containers/start \
+    -H "Content-Type: application/json" \
+    -d "{\"host_id\": 0, \"key\": \"$(openssl rand -hex 16)\", \"container_prefix\": \"node\"}"
+  echo ""
+done
+```
+
+List all running containers:
+```bash
+curl -s http://localhost:5000/api/containers | python3 -m json.tool
+```
+
+Stop a specific container:
+```bash
+curl -X POST http://localhost:5000/api/containers/0/node1/stop
+```
+
+## 🔧 Advanced Configuration
+
+### Custom Port
+To run the control panel on a different port, edit `docker-compose.yml`:
+```yaml
+ports:
+  - "8080:5000"  # Access via http://localhost:8080
+```
+
+### Remote Docker Host Setup
+On your remote server (e.g., production server):
+```bash
+# Edit Docker daemon configuration
+sudo nano /etc/docker/daemon.json
+
+# Add:
+{
+  "hosts": ["unix:///var/run/docker.sock", "tcp://0.0.0.0:2375"]
+}
+
+# Restart Docker
+sudo systemctl restart docker
+
+# Allow firewall access (adjust IP as needed)
+sudo ufw allow from 192.168.1.0/24 to any port 2375
+```
+
+Then in the web interface:
+1. Click "➕ Add Host"
+2. Name: "Production Server"
+3. URL: `tcp://192.168.1.100:2375`
+4. Click "Add Host"
+
+### Production Deployment
+
+For production use, consider:
+1. Use a reverse proxy (nginx/Caddy) with HTTPS
+2. Set a strong SECRET_KEY environment variable
+3. Use Docker TLS for remote connections
+4. Implement authentication (add to the Flask app)
+5. Use proper logging and monitoring
+
+Example with nginx:
+```nginx
+server {
+    listen 443 ssl;
+    server_name nodes.example.com;
+    
+    ssl_certificate /path/to/cert.pem;
+    ssl_certificate_key /path/to/key.pem;
+    
+    location / {
+        proxy_pass http://localhost:5000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
 ## License
 
 This project is provided as-is for managing Datagram nodes.
@@ -221,3 +388,7 @@ This project is provided as-is for managing Datagram nodes.
 ## Support
 
 For issues or questions, please check the existing scripts and configuration files in the repository.
+
+---
+
+**Need help?** Check the [QUICKSTART.md](QUICKSTART.md) for a condensed guide, or review the troubleshooting section above.

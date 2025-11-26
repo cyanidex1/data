@@ -14,6 +14,8 @@ services:
     environment:
       - SECRET_KEY=change-this-to-a-random-secret-key
       - DEBUG=False
+      - ADMIN_USERNAME=admin
+      - ADMIN_PASSWORD=admin
     restart: unless-stopped
     # Run as root to access Docker socket
     user: root
