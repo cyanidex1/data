@@ -339,8 +339,9 @@ openssl x509 -req -days 365 -sha256 -in server.csr -CA ca.pem -CAkey ca-key.pem 
   -CAcreateserial -out server-cert.pem -extfile extfile.cnf
 
 # Configure Docker daemon (/etc/docker/daemon.json):
+# Note: Only bind to specific interfaces, not 0.0.0.0 unless remote access from all interfaces is required
 {
-  "hosts": ["unix:///var/run/docker.sock", "tcp://0.0.0.0:2376"],
+  "hosts": ["unix:///var/run/docker.sock", "tcp://192.168.1.100:2376"],
   "tls": true,
   "tlscacert": "/root/.docker/certs/ca.pem",
   "tlscert": "/root/.docker/certs/server-cert.pem",
@@ -412,8 +413,8 @@ For additional security, consider adding:
 
 ```python
 # In app.py, modify container.run() to include:
-security_opt=['no-new-privileges:true'],
-read_only=True,  # If applicable
+security_opt=['no-new-privileges=true'],
+read_only=True,  # If the container supports read-only root filesystem
 ```
 
 ### 7. Monitoring and Logging
