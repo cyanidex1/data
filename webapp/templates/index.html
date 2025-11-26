@@ -250,6 +250,7 @@
         <div id="alerts"></div>
 
         <!-- Start New Container -->
+        {% if can_edit %}
         <div class="card">
             <div class="card-header"><span class="icon-container"></span> Start New Container</div>
             <div class="card-body">
@@ -275,6 +276,7 @@
                 </form>
             </div>
         </div>
+        {% endif %}
 
         <!-- Running Containers -->
         <div class="card">
@@ -368,16 +370,22 @@
 
     <script>
         let refreshInterval;
+        const canEdit = {{ 'true' if can_edit else 'false' }};
         
         document.addEventListener('DOMContentLoaded', function() {
             loadHosts();
             refreshContainers();
             refreshInterval = setInterval(refreshContainers, 10000);
             
-            document.getElementById('start-form').addEventListener('submit', function(e) {
-                e.preventDefault();
-                startContainer();
-            });
+            if (canEdit) {
+                const startForm = document.getElementById('start-form');
+                if (startForm) {
+                    startForm.addEventListener('submit', function(e) {
+                        e.preventDefault();
+                        startContainer();
+                    });
+                }
+            }
             
             // Initialize theme selector
             const themeSelector = document.getElementById('theme-selector');
@@ -414,22 +422,30 @@
         }
         
         async function loadHosts() {
+            if (!canEdit) return; // Only load hosts for users who can edit
+            
             try {
                 const response = await fetch('/api/hosts');
+                if (response.status === 403) {
+                    // User doesn't have permission to view hosts
+                    return;
+                }
+                
                 const data = await response.json();
                 
                 const hostSelect = document.getElementById('host-select');
-                hostSelect.innerHTML = '<option value="">Select a host...</option>';
-                
-                data.hosts.forEach(host => {
-                    const option = document.createElement('option');
-                    option.value = host.id;
-                    option.textContent = host.name;
-                    hostSelect.appendChild(option);
-                });
+                if (hostSelect) {
+                    hostSelect.innerHTML = '<option value="">Select a host...</option>';
+                    
+                    data.hosts.forEach(host => {
+                        const option = document.createElement('option');
+                        option.value = host.id;
+                        option.textContent = host.name;
+                        hostSelect.appendChild(option);
+                    });
+                }
             } catch (error) {
                 console.error('Error loading hosts:', error);
-                showAlert('Error loading hosts: ' + error.message, 'error');
             }
         }
         
@@ -530,12 +546,13 @@
                                         <td style="font-size: 12px; color: #8b949e;">${c.expiration_date ? new Date(c.expiration_date).toLocaleString() : 'Never'}</td>
                                         <td>
                                             <div class="actions">
-                                                ${c.status !== 'running' && c.status !== 'expired' ? 
-                                                    `<button onclick="startExistingContainer('${c.host_id}', '${c.id}')" class="btn btn-primary btn-sm"><span class="icon-play"></span> Start</button>` : 
-                                                    c.status === 'running' ? `<button onclick="stopContainer('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm"><span class="icon-stop"></span> Stop</button>` : ''
-                                                }
-                                                ${c.status !== 'expired' ? `<button onclick="restartContainer('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm"><span class="icon-restart"></span> Restart</button>` : ''}
-                                                <button onclick="removeContainer('${c.host_id}', '${c.id}')" class="btn btn-danger btn-sm"><span class="icon-remove"></span> Remove</button>
+                                                ${canEdit ? (
+                                                    c.status !== 'running' && c.status !== 'expired' ? 
+                                                        `<button onclick="startExistingContainer('${c.host_id}', '${c.id}')" class="btn btn-primary btn-sm"><span class="icon-play"></span> Start</button>` : 
+                                                        c.status === 'running' ? `<button onclick="stopContainer('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm"><span class="icon-stop"></span> Stop</button>` : ''
+                                                ) : ''}
+                                                ${canEdit && c.status !== 'expired' ? `<button onclick="restartContainer('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm"><span class="icon-restart"></span> Restart</button>` : ''}
+                                                ${canEdit ? `<button onclick="removeContainer('${c.host_id}', '${c.id}')" class="btn btn-danger btn-sm"><span class="icon-remove"></span> Remove</button>` : ''}
                                                 <button onclick="showLogs('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm"><span class="icon-logs"></span> Logs</button>
                                             </div>
                                         </td>

@@ -404,14 +404,20 @@ def update_theme():
 @login_required
 def index():
     """Main dashboard page"""
-    # Don't show hosts on main page anymore - they're in admin panel
-    return render_template('index.html')
+    # Pass user role information to template
+    return render_template('index.html', 
+                         can_edit=current_user.can_edit(),
+                         can_view=current_user.can_view(),
+                         is_admin=current_user.is_admin())
 
 
 @app.route('/api/hosts', methods=['GET'])
 @login_required
 def list_hosts():
-    """List all Docker hosts"""
+    """List all Docker hosts - admin only"""
+    if not current_user.is_admin():
+        return jsonify({'error': 'Admin privileges required'}), 403
+    
     return jsonify({'hosts': host_manager.hosts})
 
 
@@ -448,7 +454,10 @@ def remove_host(host_id):
 @app.route('/api/containers', methods=['GET'])
 @login_required
 def list_containers():
-    """List all containers across all hosts"""
+    """List all containers across all hosts - requires view permission"""
+    if not current_user.can_view():
+        return jsonify({'error': 'View privileges required'}), 403
+    
     all_containers = []
     
     for host in host_manager.hosts:
