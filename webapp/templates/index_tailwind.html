@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Datagram Control Panel</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        github: {
+                            canvas: '#0d1117',
+                            'canvas-subtle': '#161b22',
+                            'canvas-inset': '#010409',
+                            border: '#30363d',
+                            'fg-default': '#e6edf3',
+                            'fg-muted': '#8b949e',
+                            'fg-subtle': '#6e7681',
+                            accent: '#1f6feb',
+                            success: '#238636',
+                            danger: '#da3633',
+                            warning: '#9e6a03',
+                            'success-emphasis': '#2ea043',
+                            'danger-emphasis': '#f85149',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-github-canvas text-github-fg-default min-h-screen">
+    <!-- Navigation Header -->
+    <nav class="bg-github-canvas-subtle border-b border-github-border">
+        <div class="container mx-auto px-4 py-3">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <div class="text-2xl">🐳</div>
+                    <h1 class="text-xl font-semibold">Datagram Control Panel</h1>
+                </div>
+                <div class="flex items-center space-x-4 text-sm">
+                    <span class="text-github-fg-muted">
+                        <span class="text-github-fg-subtle">👤</span> {{ current_user.username }}
+                    </span>
+                    <span class="text-github-border">|</span>
+                    <a href="{{ url_for('change_password') }}" class="text-github-accent hover:text-blue-400 transition-colors">Change Password</a>
+                    <a href="{{ url_for('logout') }}" class="text-github-accent hover:text-blue-400 transition-colors">Logout</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mx-auto px-4 py-6 space-y-6">
+        <!-- Alerts -->
+        <div id="alerts"></div>
+
+        <!-- Start New Container Card -->
+        <div class="bg-github-canvas-subtle border border-github-border rounded-lg">
+            <div class="border-b border-github-border px-4 py-3">
+                <h2 class="text-lg font-semibold flex items-center">
+                    <span class="mr-2">🚀</span> Start New Container
+                </h2>
+            </div>
+            <div class="p-4">
+                <form id="start-form" class="space-y-4">
+                    <div>
+                        <label for="host-select" class="block text-sm font-medium mb-2">Docker Host</label>
+                        <select id="host-select" required class="w-full px-3 py-2 bg-github-canvas border border-github-border rounded-md text-github-fg-default focus:outline-none focus:ring-2 focus:ring-github-accent">
+                            <option value="">Select a host...</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="key-input" class="block text-sm font-medium mb-2">Datagram Key (32 characters)</label>
+                        <input 
+                            type="text" 
+                            id="key-input" 
+                            placeholder="Enter 32-character key" 
+                            maxlength="32" 
+                            required
+                            class="w-full px-3 py-2 bg-github-canvas border border-github-border rounded-md text-github-fg-default focus:outline-none focus:ring-2 focus:ring-github-accent font-mono"
+                        >
+                        <p class="text-xs text-github-fg-muted mt-1">The key will be used as the container name</p>
+                    </div>
+                    <button type="submit" class="px-4 py-2 bg-github-success hover:bg-green-600 text-white font-medium rounded-md transition-colors">
+                        Start Container
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Running Containers Card -->
+        <div class="bg-github-canvas-subtle border border-github-border rounded-lg">
+            <div class="border-b border-github-border px-4 py-3 flex items-center justify-between">
+                <h2 class="text-lg font-semibold flex items-center">
+                    <span class="mr-2">📊</span> Running Containers
+                </h2>
+                <button onclick="refreshContainers()" class="px-3 py-1 text-sm bg-github-canvas hover:bg-github-canvas-inset border border-github-border rounded-md transition-colors">
+                    🔄 Refresh
+                </button>
+            </div>
+            <div id="containers-loading" class="p-8 text-center text-github-fg-muted">
+                Loading containers...
+            </div>
+            <div id="containers-list"></div>
+        </div>
+
+        <!-- Docker Hosts Card -->
+        <div class="bg-github-canvas-subtle border border-github-border rounded-lg">
+            <div class="border-b border-github-border px-4 py-3 flex items-center justify-between">
+                <h2 class="text-lg font-semibold flex items-center">
+                    <span class="mr-2">🖥️</span> Docker Hosts
+                </h2>
+                <button onclick="showAddHostModal()" class="px-3 py-1 text-sm bg-github-success hover:bg-green-600 text-white rounded-md transition-colors">
+                    ➕ Add Host
+                </button>
+            </div>
+            <div id="hosts-list" class="p-4"></div>
+        </div>
+    </div>
+
+    <!-- Add Host Modal -->
+    <div id="add-host-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div class="bg-github-canvas-subtle border border-github-border rounded-lg max-w-md w-full">
+            <div class="border-b border-github-border px-4 py-3">
+                <h2 class="text-lg font-semibold">Add Docker Host</h2>
+            </div>
+            <form id="add-host-form" class="p-4 space-y-4">
+                <div>
+                    <label for="host-name" class="block text-sm font-medium mb-2">Name</label>
+                    <input type="text" id="host-name" placeholder="e.g., Production Server" required class="w-full px-3 py-2 bg-github-canvas border border-github-border rounded-md text-github-fg-default focus:outline-none focus:ring-2 focus:ring-github-accent">
+                </div>
+                <div>
+                    <label for="host-url" class="block text-sm font-medium mb-2">URL</label>
+                    <input type="text" id="host-url" placeholder="e.g., tcp://192.168.1.100:2375 or 'local'" required class="w-full px-3 py-2 bg-github-canvas border border-github-border rounded-md text-github-fg-default focus:outline-none focus:ring-2 focus:ring-github-accent">
+                    <p class="text-xs text-github-fg-muted mt-1">Use 'local' for local Docker daemon, or tcp://host:port for remote hosts</p>
+                </div>
+                <div>
+                    <label for="host-description" class="block text-sm font-medium mb-2">Description (optional)</label>
+                    <textarea id="host-description" rows="3" placeholder="Description of this host" class="w-full px-3 py-2 bg-github-canvas border border-github-border rounded-md text-github-fg-default focus:outline-none focus:ring-2 focus:ring-github-accent"></textarea>
+                </div>
+                <div class="flex justify-end space-x-2 pt-2">
+                    <button type="button" onclick="closeAddHostModal()" class="px-4 py-2 bg-github-canvas hover:bg-github-canvas-inset border border-github-border rounded-md transition-colors">
+                        Cancel
+                    </button>
+                    <button type="submit" class="px-4 py-2 bg-github-success hover:bg-green-600 text-white rounded-md transition-colors">
+                        Add Host
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Logs Modal -->
+    <div id="logs-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div class="bg-github-canvas-subtle border border-github-border rounded-lg max-w-4xl w-full max-h-[80vh] flex flex-col">
+            <div class="border-b border-github-border px-4 py-3 flex items-center justify-between">
+                <h2 class="text-lg font-semibold">Container Logs</h2>
+                <button onclick="closeLogsModal()" class="text-github-fg-muted hover:text-github-fg-default">✕</button>
+            </div>
+            <div class="flex-1 overflow-auto p-4">
+                <pre id="logs-content" class="bg-github-canvas-inset p-4 rounded-md text-sm font-mono text-green-400 whitespace-pre-wrap"></pre>
+            </div>
+            <div class="border-t border-github-border px-4 py-3 flex justify-end">
+                <button onclick="closeLogsModal()" class="px-4 py-2 bg-github-canvas hover:bg-github-canvas-inset border border-github-border rounded-md transition-colors">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let refreshInterval;
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            loadHosts();
+            refreshContainers();
+            refreshInterval = setInterval(refreshContainers, 10000);
+            
+            document.getElementById('start-form').addEventListener('submit', function(e) {
+                e.preventDefault();
+                startContainer();
+            });
+            
+            document.getElementById('add-host-form').addEventListener('submit', function(e) {
+                e.preventDefault();
+                addHost();
+            });
+        });
+        
+        function showAlert(message, type = 'info') {
+            const alertsDiv = document.getElementById('alerts');
+            const bgClass = type === 'error' ? 'bg-red-900/20 border-red-800 text-red-400' : type === 'success' ? 'bg-green-900/20 border-green-800 text-green-400' : 'bg-blue-900/20 border-blue-800 text-blue-400';
+            const alert = document.createElement('div');
+            alert.className = `p-3 rounded-md border ${bgClass} mb-4`;
+            alert.textContent = message;
+            alertsDiv.appendChild(alert);
+            
+            setTimeout(() => alert.remove(), 5000);
+        }
+        
+        async function loadHosts() {
+            try {
+                const response = await fetch('/api/hosts');
+                const data = await response.json();
+                
+                const select = document.getElementById('host-select');
+                select.innerHTML = '<option value="">Select a host...</option>';
+                data.hosts.forEach(host => {
+                    const option = document.createElement('option');
+                    option.value = host.id;
+                    option.textContent = host.name;
+                    select.appendChild(option);
+                });
+                
+                const hostsList = document.getElementById('hosts-list');
+                if (data.hosts.length === 0) {
+                    hostsList.innerHTML = '<p class="text-center text-github-fg-muted py-8">No Docker hosts configured. Add one to get started.</p>';
+                } else {
+                    hostsList.innerHTML = '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">' + data.hosts.map(host => `
+                        <div class="bg-github-canvas border border-github-border rounded-md p-4">
+                            <h3 class="font-semibold mb-2">${host.name}</h3>
+                            <p class="text-sm text-github-fg-muted mb-1"><strong>URL:</strong> <code class="bg-github-canvas-inset px-1.5 py-0.5 rounded">${host.url}</code></p>
+                            ${host.description ? `<p class="text-sm text-github-fg-muted mb-2"><strong>Description:</strong> ${host.description}</p>` : ''}
+                            <p class="text-xs text-github-fg-subtle mb-3">Added: ${new Date(host.added_at).toLocaleString()}</p>
+                            <button onclick="removeHost(${host.id})" class="px-3 py-1 text-sm bg-github-danger hover:bg-red-600 text-white rounded-md transition-colors">Remove</button>
+                        </div>
+                    `).join('') + '</div>';
+                }
+            } catch (error) {
+                showAlert('Error loading hosts: ' + error.message, 'error');
+            }
+        }
+        
+        async function refreshContainers() {
+            const loadingDiv = document.getElementById('containers-loading');
+            const listDiv = document.getElementById('containers-list');
+            
+            try {
+                const response = await fetch('/api/containers');
+                const data = await response.json();
+                
+                loadingDiv.style.display = 'none';
+                
+                if (data.containers.length === 0) {
+                    listDiv.innerHTML = '<p class="text-center text-github-fg-muted py-8">No containers running. Start one above!</p>';
+                } else {
+                    const statusColors = {
+                        running: 'bg-green-900/30 text-green-400',
+                        exited: 'bg-red-900/30 text-red-400',
+                        created: 'bg-blue-900/30 text-blue-400',
+                        restarting: 'bg-yellow-900/30 text-yellow-400'
+                    };
+                    
+                    listDiv.innerHTML = `
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead class="border-b border-github-border">
+                                    <tr class="text-left">
+                                        <th class="px-4 py-3 font-semibold">Host</th>
+                                        <th class="px-4 py-3 font-semibold">Name</th>
+                                        <th class="px-4 py-3 font-semibold">Status</th>
+                                        <th class="px-4 py-3 font-semibold">Image</th>
+                                        <th class="px-4 py-3 font-semibold">Key</th>
+                                        <th class="px-4 py-3 font-semibold">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-github-border">
+                                    ${data.containers.map(container => `
+                                        <tr class="hover:bg-github-canvas transition-colors">
+                                            <td class="px-4 py-3 text-github-fg-muted">${container.host_name}</td>
+                                            <td class="px-4 py-3 font-mono text-sm">${container.name}</td>
+                                            <td class="px-4 py-3">
+                                                <span class="px-2 py-1 rounded text-xs font-medium ${statusColors[container.status] || 'bg-gray-900/30 text-gray-400'}">
+                                                    ${container.status}
+                                                </span>
+                                            </td>
+                                            <td class="px-4 py-3 text-github-fg-muted text-xs">${container.image}</td>
+                                            <td class="px-4 py-3 font-mono text-xs text-github-fg-muted">${container.key || 'N/A'}</td>
+                                            <td class="px-4 py-3">
+                                                <div class="flex flex-wrap gap-1">
+                                                    ${container.status !== 'running' ? 
+                                                        `<button onclick="startExistingContainer('${container.host_id}', '${container.id}')" class="px-2 py-1 text-xs bg-github-success hover:bg-green-600 text-white rounded transition-colors">Start</button>` : 
+                                                        `<button onclick="stopContainer('${container.host_id}', '${container.id}')" class="px-2 py-1 text-xs bg-yellow-700 hover:bg-yellow-600 text-white rounded transition-colors">Stop</button>`
+                                                    }
+                                                    <button onclick="restartContainer('${container.host_id}', '${container.id}')" class="px-2 py-1 text-xs bg-github-canvas hover:bg-github-canvas-inset border border-github-border rounded transition-colors">Restart</button>
+                                                    <button onclick="killContainer('${container.host_id}', '${container.id}')" class="px-2 py-1 text-xs bg-github-danger hover:bg-red-600 text-white rounded transition-colors">Kill</button>
+                                                    <button onclick="removeContainer('${container.host_id}', '${container.id}')" class="px-2 py-1 text-xs bg-github-danger hover:bg-red-600 text-white rounded transition-colors">Remove</button>
+                                                    <button onclick="showLogs('${container.host_id}', '${container.id}')" class="px-2 py-1 text-xs bg-github-accent hover:bg-blue-600 text-white rounded transition-colors">Logs</button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                loadingDiv.style.display = 'none';
+                listDiv.innerHTML = `<div class="p-4 text-red-400 bg-red-900/20 border border-red-800 rounded-md">Error loading containers: ${error.message}</div>`;
+            }
+        }
+        
+        async function startContainer() {
+            const hostId = document.getElementById('host-select').value;
+            const key = document.getElementById('key-input').value;
+            
+            if (!hostId) {
+                showAlert('Please select a host', 'error');
+                return;
+            }
+            
+            if (key.length !== 32) {
+                showAlert('Key must be exactly 32 characters', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/containers/start', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ host_id: parseInt(hostId), key: key })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showAlert(`Container started successfully with key: ${key}`, 'success');
+                    document.getElementById('key-input').value = '';
+                    refreshContainers();
+                } else {
+                    showAlert('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error starting container: ' + error.message, 'error');
+            }
+        }
+        
+        async function startExistingContainer(hostId, containerId) {
+            try {
+                const response = await fetch(`/api/containers/${hostId}/${containerId}/start`, { method: 'POST' });
+                const data = await response.json();
+                if (response.ok) {
+                    showAlert('Container started', 'success');
+                    refreshContainers();
+                } else {
+                    showAlert('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error: ' + error.message, 'error');
+            }
+        }
+        
+        async function stopContainer(hostId, containerId) {
+            if (!confirm('Stop this container?')) return;
+            try {
+                const response = await fetch(`/api/containers/${hostId}/${containerId}/stop`, { method: 'POST' });
+                const data = await response.json();
+                if (response.ok) {
+                    showAlert('Container stopped', 'success');
+                    refreshContainers();
+                } else {
+                    showAlert('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error: ' + error.message, 'error');
+            }
+        }
+        
+        async function restartContainer(hostId, containerId) {
+            try {
+                const response = await fetch(`/api/containers/${hostId}/${containerId}/restart`, { method: 'POST' });
+                const data = await response.json();
+                if (response.ok) {
+                    showAlert('Container restarted', 'success');
+                    refreshContainers();
+                } else {
+                    showAlert('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error: ' + error.message, 'error');
+            }
+        }
+        
+        async function killContainer(hostId, containerId) {
+            if (!confirm('Kill this container? This will forcefully stop it.')) return;
+            try {
+                const response = await fetch(`/api/containers/${hostId}/${containerId}/kill`, { method: 'POST' });
+                const data = await response.json();
+                if (response.ok) {
+                    showAlert('Container killed', 'success');
+                    refreshContainers();
+                } else {
+                    showAlert('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error: ' + error.message, 'error');
+            }
+        }
+        
+        async function removeContainer(hostId, containerId) {
+            if (!confirm('Remove this container? This action cannot be undone.')) return;
+            try {
+                const response = await fetch(`/api/containers/${hostId}/${containerId}/remove`, { method: 'DELETE' });
+                const data = await response.json();
+                if (response.ok) {
+                    showAlert('Container removed', 'success');
+                    refreshContainers();
+                } else {
+                    showAlert('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error: ' + error.message, 'error');
+            }
+        }
+        
+        async function showLogs(hostId, containerId) {
+            const modal = document.getElementById('logs-modal');
+            const content = document.getElementById('logs-content');
+            
+            content.textContent = 'Loading logs...';
+            modal.classList.remove('hidden');
+            
+            try {
+                const response = await fetch(`/api/containers/${hostId}/${containerId}/logs`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    content.textContent = data.logs || 'No logs available';
+                } else {
+                    content.textContent = 'Error loading logs: ' + data.error;
+                }
+            } catch (error) {
+                content.textContent = 'Error loading logs: ' + error.message;
+            }
+        }
+        
+        function closeLogsModal() {
+            document.getElementById('logs-modal').classList.add('hidden');
+        }
+        
+        function showAddHostModal() {
+            document.getElementById('add-host-modal').classList.remove('hidden');
+        }
+        
+        function closeAddHostModal() {
+            document.getElementById('add-host-modal').classList.add('hidden');
+            document.getElementById('add-host-form').reset();
+        }
+        
+        async function addHost() {
+            const name = document.getElementById('host-name').value;
+            const url = document.getElementById('host-url').value;
+            const description = document.getElementById('host-description').value;
+            
+            try {
+                const response = await fetch('/api/hosts', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ name, url, description })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showAlert('Host added successfully!', 'success');
+                    closeAddHostModal();
+                    loadHosts();
+                } else {
+                    showAlert('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error adding host: ' + error.message, 'error');
+            }
+        }
+        
+        async function removeHost(hostId) {
+            if (!confirm('Remove this Docker host? This will not affect running containers.')) return;
+            
+            try {
+                const response = await fetch(`/api/hosts/${hostId}`, { method: 'DELETE' });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showAlert('Host removed', 'success');
+                    loadHosts();
+                } else {
+                    showAlert('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error: ' + error.message, 'error');
+            }
+        }
+        
+        window.onclick = function(event) {
+            const hostModal = document.getElementById('add-host-modal');
+            const logsModal = document.getElementById('logs-modal');
+            if (event.target === hostModal) closeAddHostModal();
+            if (event.target === logsModal) closeLogsModal();
+        }
+    </script>
+</body>
+</html>
