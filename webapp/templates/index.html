@@ -228,6 +228,63 @@
             border-color: #2f81f7;
         }
         
+        /* Theme Toggle Switch */
+        .theme-switch-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .theme-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+        
+        .theme-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .theme-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: var(--border-color);
+            transition: .3s;
+            border-radius: 24px;
+        }
+        
+        .theme-slider:before {
+            position: absolute;
+            content: "🌙";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: var(--card-bg-color);
+            transition: .3s;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+        }
+        
+        .theme-switch input:checked + .theme-slider {
+            background-color: var(--primary-color);
+        }
+        
+        .theme-switch input:checked + .theme-slider:before {
+            transform: translateX(26px);
+            content: "☀️";
+        }
+        
         /* Responsive Design for Mobile */
         @media (max-width: 768px) {
             .header-content {
@@ -250,9 +307,19 @@
                 gap: 8px;
             }
             
-            .header-user select {
-                font-size: 12px;
-                padding: 2px 6px;
+            .theme-switch {
+                width: 44px;
+                height: 22px;
+            }
+            
+            .theme-slider:before {
+                height: 16px;
+                width: 16px;
+                font-size: 9px;
+            }
+            
+            .theme-switch input:checked + .theme-slider:before {
+                transform: translateX(22px);
             }
             
             .container {
@@ -344,10 +411,12 @@
                 <span>👤 {{ current_user.username }}</span>
                 {% endif %}
                 <span>|</span>
-                <select id="theme-selector" style="padding: 4px 8px; background: var(--input-bg-color); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-color); font-size: 13px; cursor: pointer;">
-                    <option value="dark">🌙 Dark</option>
-                    <option value="light">☀️ Light</option>
-                </select>
+                <div class="theme-switch-wrapper">
+                    <label class="theme-switch">
+                        <input type="checkbox" id="theme-toggle">
+                        <span class="theme-slider"></span>
+                    </label>
+                </div>
                 <span>|</span>
                 <a href="{{ url_for('change_password') }}">Change Password</a>
                 <a href="{{ url_for('logout') }}">Logout</a>
@@ -496,13 +565,14 @@
                 }
             }
             
-            // Initialize theme selector
-            const themeSelector = document.getElementById('theme-selector');
-            themeSelector.value = '{{ current_user.theme }}' || 'dark';
-            applyTheme(themeSelector.value);
+            // Initialize theme toggle
+            const themeToggle = document.getElementById('theme-toggle');
+            const currentTheme = '{{ current_user.theme }}' || 'dark';
+            themeToggle.checked = currentTheme === 'light';
+            applyTheme(currentTheme);
             
-            themeSelector.addEventListener('change', async function() {
-                const theme = this.value;
+            themeToggle.addEventListener('change', async function() {
+                const theme = this.checked ? 'light' : 'dark';
                 try {
                     const response = await fetch('/api/theme', {
                         method: 'POST',

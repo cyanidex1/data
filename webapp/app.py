@@ -497,9 +497,9 @@ def index():
 @app.route('/api/hosts', methods=['GET'])
 @login_required
 def list_hosts():
-    """List all Docker hosts - admin only"""
-    if not current_user.is_admin():
-        return jsonify({'error': 'Admin privileges required'}), 403
+    """List all Docker hosts - editors and admins can view hosts"""
+    if not current_user.can_edit():
+        return jsonify({'error': 'Edit privileges required'}), 403
     
     return jsonify({'hosts': host_manager.hosts})
 
