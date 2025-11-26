@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  datagram-control-panel:
+    build: ./webapp
+    container_name: datagram-control-panel
+    ports:
+      - "5000:5000"
+    volumes:
+      # Mount Docker socket to manage containers on the same host
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Persistent storage for host configuration
+      - ./data:/data
+    environment:
+      - SECRET_KEY=change-this-to-a-random-secret-key
+      - DEBUG=False
+      - ADMIN_USERNAME=admin
+      - ADMIN_PASSWORD=admin
+    restart: unless-stopped
+    # Run as root to access Docker socket
+    user: root
+    networks:
+      - datagram-network
+
+networks:
+  datagram-network:
+    driver: bridge

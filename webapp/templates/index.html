@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Datagram Control Panel</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: #0d1117;
+            color: #e6edf3;
+            line-height: 1.6;
+        }
+        
+        .header {
+            background: #161b22;
+            border-bottom: 1px solid #30363d;
+            padding: 16px 0;
+        }
+        
+        .header-content {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 0 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header-title { font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+        .header-user { font-size: 14px; color: #8b949e; display: flex; gap: 12px; align-items: center; }
+        .header-user a { color: #2f81f7; text-decoration: none; }
+        .header-user a:hover { text-decoration: underline; }
+        
+        .container { max-width: 1280px; margin: 0 auto; padding: 24px 16px; }
+        
+        .alert {
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 16px;
+            border: 1px solid;
+        }
+        .alert-success { background: #1f2d1f; border-color: #238636; color: #3fb950; }
+        .alert-error { background: #2d1b1e; border-color: #da3633; color: #f85149; }
+        
+        .card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            margin-bottom: 16px;
+        }
+        
+        .card-header {
+            padding: 16px;
+            border-bottom: 1px solid #30363d;
+            font-size: 16px;
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .card-body { padding: 16px; }
+        
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; margin-bottom: 6px; font-size: 14px; font-weight: 500; }
+        
+        select, input[type="text"] {
+            width: 100%;
+            padding: 8px 12px;
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            color: #e6edf3;
+            font-size: 14px;
+            font-family: inherit;
+        }
+        
+        select:focus, input[type="text"]:focus {
+            outline: none;
+            border-color: #2f81f7;
+        }
+        
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            display: inline-block;
+            text-decoration: none;
+        }
+        
+        .btn-primary { background: #238636; color: #fff; }
+        .btn-primary:hover { background: #2ea043; }
+        .btn-secondary { background: #21262d; color: #e6edf3; border: 1px solid #30363d; }
+        .btn-secondary:hover { background: #30363d; }
+        .btn-danger { background: #da3633; color: #fff; }
+        .btn-danger:hover { background: #f85149; }
+        .btn-sm { padding: 4px 12px; font-size: 12px; }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #30363d;
+        }
+        
+        th {
+            font-weight: 600;
+            color: #8b949e;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+        
+        tr:hover { background: #0d1117; }
+        
+        .status {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .status-running { background: #1f2d1f; color: #3fb950; }
+        .status-exited { background: #2d1b1e; color: #f85149; }
+        .status-created { background: #1f2d3d; color: #58a6ff; }
+        
+        .actions { display: flex; gap: 4px; flex-wrap: wrap; }
+        
+        .empty-state {
+            text-align: center;
+            padding: 48px 16px;
+            color: #8b949e;
+        }
+        
+        code {
+            background: #0d1117;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .help-text {
+            font-size: 12px;
+            color: #8b949e;
+            margin-top: 4px;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 16px;
+        }
+        
+        .host-card {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 16px;
+        }
+        
+        .host-card h3 { margin-bottom: 8px; font-size: 16px; }
+        .host-card p { font-size: 13px; color: #8b949e; margin-bottom: 4px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-content">
+            <div class="header-title">
+                <span>🐳</span> Datagram Control Panel
+            </div>
+            <div class="header-user">
+                <span>👤 {{ current_user.username }}</span>
+                <span>|</span>
+                <a href="{{ url_for('change_password') }}">Change Password</a>
+                <a href="{{ url_for('logout') }}">Logout</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div id="alerts"></div>
+
+        <!-- Start New Container -->
+        <div class="card">
+            <div class="card-header">🚀 Start New Container</div>
+            <div class="card-body">
+                <form id="start-form">
+                    <div class="form-group">
+                        <label for="host-select">Docker Host</label>
+                        <select id="host-select" required>
+                            <option value="">Select a host...</option>
+                            {% for host in hosts %}
+                            <option value="{{ host.id }}">{{ host.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="key-input">Datagram Key (32 characters)</label>
+                        <input type="text" id="key-input" placeholder="Enter 32-character key" maxlength="32" required>
+                        <div class="help-text">The key will be used as the container name</div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Start Container</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Running Containers -->
+        <div class="card">
+            <div class="card-header">
+                📊 Running Containers
+                <button onclick="refreshContainers()" class="btn btn-secondary btn-sm">🔄 Refresh</button>
+            </div>
+            <div id="containers-loading" style="padding: 24px; text-align: center; color: #8b949e;">Loading containers...</div>
+            <div id="containers-list"></div>
+        </div>
+
+        <!-- Docker Hosts -->
+        <div class="card">
+            <div class="card-header">
+                🖥️ Docker Hosts
+                <button onclick="showAddHostModal()" class="btn btn-primary btn-sm">➕ Add Host</button>
+            </div>
+            <div class="card-body">
+                <div class="grid">
+                    {% for host in hosts %}
+                    <div class="host-card">
+                        <h3>{{ host.name }}</h3>
+                        <p><strong>URL:</strong> <code>{{ host.url }}</code></p>
+                        {% if host.description %}
+                        <p><strong>Description:</strong> {{ host.description }}</p>
+                        {% endif %}
+                        <p style="font-size: 11px; margin-top: 8px;">Added: {{ host.added_at[:19] }}</p>
+                        <button onclick="removeHost({{ host.id }})" class="btn btn-danger btn-sm" style="margin-top: 8px;">Remove</button>
+                    </div>
+                    {% endfor %}
+                    {% if hosts|length == 0 %}
+                    <div class="empty-state" style="grid-column: 1/-1;">No hosts configured. Add one to get started.</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal styles -->
+    <style>
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }
+        .modal.active { display: flex; }
+        .modal-content { background: #161b22; border: 1px solid #30363d; border-radius: 6px; max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto; }
+        .modal-header { padding: 16px; border-bottom: 1px solid #30363d; font-weight: 600; }
+        .modal-body { padding: 16px; }
+        .modal-footer { padding: 16px; border-top: 1px solid #30363d; display: flex; gap: 8px; justify-content: flex-end; }
+    </style>
+
+    <!-- Add Host Modal -->
+    <div id="add-host-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">Add Docker Host</div>
+            <form id="add-host-form">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="host-name">Name</label>
+                        <input type="text" id="host-name" placeholder="e.g., Production Server" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="host-url">URL</label>
+                        <input type="text" id="host-url" placeholder="e.g., tcp://192.168.1.100:2375 or 'local'" required>
+                        <div class="help-text">Use 'local' for local Docker or tcp://host:port for remote</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="host-description">Description (optional)</label>
+                        <input type="text" id="host-description" placeholder="Description of this host">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" onclick="closeAddHostModal()" class="btn btn-secondary">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Host</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Logs Modal -->
+    <div id="logs-modal" class="modal">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">Container Logs</div>
+            <div class="modal-body">
+                <pre id="logs-content" style="background: #0d1117; padding: 12px; border-radius: 6px; font-size: 12px; overflow-x: auto; color: #3fb950;"></pre>
+            </div>
+            <div class="modal-footer">
+                <button onclick="closeLogsModal()" class="btn btn-secondary">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let refreshInterval;
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            refreshContainers();
+            refreshInterval = setInterval(refreshContainers, 10000);
+            
+            document.getElementById('start-form').addEventListener('submit', function(e) {
+                e.preventDefault();
+                startContainer();
+            });
+            
+            document.getElementById('add-host-form').addEventListener('submit', function(e) {
+                e.preventDefault();
+                addHost();
+            });
+        });
+        
+        function showAlert(message, type) {
+            const alertsDiv = document.getElementById('alerts');
+            const alert = document.createElement('div');
+            alert.className = 'alert alert-' + type;
+            alert.textContent = message;
+            alertsDiv.appendChild(alert);
+            setTimeout(() => alert.remove(), 5000);
+        }
+        
+        async function refreshContainers() {
+            const loadingDiv = document.getElementById('containers-loading');
+            const listDiv = document.getElementById('containers-list');
+            
+            try {
+                const response = await fetch('/api/containers');
+                const data = await response.json();
+                
+                loadingDiv.style.display = 'none';
+                
+                if (data.containers.length === 0) {
+                    listDiv.innerHTML = '<div class="empty-state">No containers running. Start one above!</div>';
+                } else {
+                    listDiv.innerHTML = `
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Host</th>
+                                    <th>Name</th>
+                                    <th>Status</th>
+                                    <th>Image</th>
+                                    <th>Key</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.containers.map(c => `
+                                    <tr>
+                                        <td>${c.host_name}</td>
+                                        <td><code>${c.name}</code></td>
+                                        <td><span class="status status-${c.status}">${c.status}</span></td>
+                                        <td style="font-size: 12px; color: #8b949e;">${c.image}</td>
+                                        <td><code>${c.key || 'N/A'}</code></td>
+                                        <td>
+                                            <div class="actions">
+                                                ${c.status !== 'running' ? 
+                                                    `<button onclick="startExistingContainer('${c.host_id}', '${c.id}')" class="btn btn-primary btn-sm">Start</button>` : 
+                                                    `<button onclick="stopContainer('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm">Stop</button>`
+                                                }
+                                                <button onclick="restartContainer('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm">Restart</button>
+                                                <button onclick="killContainer('${c.host_id}', '${c.id}')" class="btn btn-danger btn-sm">Kill</button>
+                                                <button onclick="removeContainer('${c.host_id}', '${c.id}')" class="btn btn-danger btn-sm">Remove</button>
+                                                <button onclick="showLogs('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm">Logs</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    `;
+                }
+            } catch (error) {
+                loadingDiv.style.display = 'none';
+                listDiv.innerHTML = '<div class="alert alert-error">Error loading containers: ' + error.message + '</div>';
+            }
+        }
+        
+        async function startContainer() {
+            const hostId = document.getElementById('host-select').value;
+            const key = document.getElementById('key-input').value;
+            
+            if (!hostId) {
+                showAlert('Please select a host', 'error');
+                return;
+            }
+            
+            if (key.length !== 32) {
+                showAlert('Key must be exactly 32 characters', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/containers/start', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ host_id: parseInt(hostId), key: key })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showAlert('Container started successfully with key: ' + key, 'success');
+                    document.getElementById('key-input').value = '';
+                    refreshContainers();
+                } else {
+                    showAlert('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error starting container: ' + error.message, 'error');
+            }
+        }
+        
+        async function startExistingContainer(hostId, containerId) {
+            try {
+                const response = await fetch(`/api/containers/${hostId}/${containerId}/start`, { method: 'POST' });
+                const data = await response.json();
+                if (response.ok) {
+                    showAlert('Container started', 'success');
+                    refreshContainers();
+                } else {
+                    showAlert('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error: ' + error.message, 'error');
+            }
+        }
+        
+        async function stopContainer(hostId, containerId) {
+            if (!confirm('Stop this container?')) return;
+            try {
+                const response = await fetch(`/api/containers/${hostId}/${containerId}/stop`, { method: 'POST' });
+                const data = await response.json();
+                if (response.ok) {
+                    showAlert('Container stopped', 'success');
+                    refreshContainers();
+                } else {
+                    showAlert('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error: ' + error.message, 'error');
+            }
+        }
+        
+        async function restartContainer(hostId, containerId) {
+            try {
+                const response = await fetch(`/api/containers/${hostId}/${containerId}/restart`, { method: 'POST' });
+                const data = await response.json();
+                if (response.ok) {
+                    showAlert('Container restarted', 'success');
+                    refreshContainers();
+                } else {
+                    showAlert('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error: ' + error.message, 'error');
+            }
+        }
+        
+        async function killContainer(hostId, containerId) {
+            if (!confirm('Kill this container? This will forcefully stop it.')) return;
+            try {
+                const response = await fetch(`/api/containers/${hostId}/${containerId}/kill`, { method: 'POST' });
+                const data = await response.json();
+                if (response.ok) {
+                    showAlert('Container killed', 'success');
+                    refreshContainers();
+                } else {
+                    showAlert('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error: ' + error.message, 'error');
+            }
+        }
+        
+        async function removeContainer(hostId, containerId) {
+            if (!confirm('Remove this container? This action cannot be undone.')) return;
+            try {
+                const response = await fetch(`/api/containers/${hostId}/${containerId}/remove`, { method: 'DELETE' });
+                const data = await response.json();
+                if (response.ok) {
+                    showAlert('Container removed', 'success');
+                    refreshContainers();
+                } else {
+                    showAlert('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error: ' + error.message, 'error');
+            }
+        }
+        
+        async function showLogs(hostId, containerId) {
+            const modal = document.getElementById('logs-modal');
+            const content = document.getElementById('logs-content');
+            
+            content.textContent = 'Loading logs...';
+            modal.classList.add('active');
+            
+            try {
+                const response = await fetch(`/api/containers/${hostId}/${containerId}/logs`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    content.textContent = data.logs || 'No logs available';
+                } else {
+                    content.textContent = 'Error loading logs: ' + data.error;
+                }
+            } catch (error) {
+                content.textContent = 'Error loading logs: ' + error.message;
+            }
+        }
+        
+        function closeLogsModal() {
+            document.getElementById('logs-modal').classList.remove('active');
+        }
+        
+        function showAddHostModal() {
+            document.getElementById('add-host-modal').classList.add('active');
+        }
+        
+        function closeAddHostModal() {
+            document.getElementById('add-host-modal').classList.remove('active');
+            document.getElementById('add-host-form').reset();
+        }
+        
+        async function addHost() {
+            const name = document.getElementById('host-name').value;
+            const url = document.getElementById('host-url').value;
+            const description = document.getElementById('host-description').value;
+            
+            try {
+                const response = await fetch('/api/hosts', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ name, url, description })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showAlert('Host added successfully!', 'success');
+                    closeAddHostModal();
+                    location.reload();
+                } else {
+                    showAlert('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error adding host: ' + error.message, 'error');
+            }
+        }
+        
+        async function removeHost(hostId) {
+            if (!confirm('Remove this Docker host? This will not affect running containers.')) return;
+            
+            try {
+                const response = await fetch(`/api/hosts/${hostId}`, { method: 'DELETE' });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showAlert('Host removed', 'success');
+                    location.reload();
+                } else {
+                    showAlert('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error: ' + error.message, 'error');
+            }
+        }
+        
+        window.onclick = function(event) {
+            const hostModal = document.getElementById('add-host-modal');
+            const logsModal = document.getElementById('logs-modal');
+            if (event.target === hostModal) closeAddHostModal();
+            if (event.target === logsModal) closeLogsModal();
+        }
+    </script>
+</body>
+</html>
