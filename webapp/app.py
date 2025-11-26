@@ -13,7 +13,7 @@ import os
 import re
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from io import StringIO
 import csv
 
@@ -31,6 +31,54 @@ DATA_DIR = os.environ.get('DATA_DIR', '/data')
 HOSTS_FILE = os.path.join(DATA_DIR, 'docker_hosts.json')
 USERS_FILE = os.path.join(DATA_DIR, 'users.json')
 DEFAULT_IMAGE = 'datagram'
+
+
+def is_expired(expiration_date_str):
+    """
+    Check if a container has expired based on its expiration date string.
+    Handles both timezone-aware and timezone-naive datetime strings.
+    
+    Args:
+        expiration_date_str: ISO format datetime string (e.g., '2024-11-26T20:26:10.313Z')
+    
+    Returns:
+        bool: True if expired, False otherwise
+    """
+    try:
+        exp_dt = datetime.fromisoformat(expiration_date_str)
+        # Use UTC time if expiration date has timezone info, otherwise use local time
+        if exp_dt.tzinfo is not None:
+            now = datetime.now(timezone.utc)
+        else:
+            now = datetime.now()
+        return now > exp_dt
+    except (ValueError, TypeError):
+        return False
+
+
+def is_past_removal_date(expiration_date_str, days=7):
+    """
+    Check if a container is past its removal date (expiration + N days).
+    Handles both timezone-aware and timezone-naive datetime strings.
+    
+    Args:
+        expiration_date_str: ISO format datetime string
+        days: Number of days after expiration before removal (default: 7)
+    
+    Returns:
+        bool: True if past removal date, False otherwise
+    """
+    try:
+        exp_dt = datetime.fromisoformat(expiration_date_str)
+        removal_date = exp_dt + timedelta(days=days)
+        # Use UTC time if expiration date has timezone info, otherwise use local time
+        if exp_dt.tzinfo is not None:
+            now = datetime.now(timezone.utc)
+        else:
+            now = datetime.now()
+        return now > removal_date
+    except (ValueError, TypeError):
+        return False
 
 
 class User(UserMixin):
@@ -587,13 +635,8 @@ def list_containers():
                 
                 # Determine container status
                 status = container.status
-                if expiration_date:
-                    try:
-                        exp_dt = datetime.fromisoformat(expiration_date)
-                        if datetime.now() > exp_dt:
-                            status = 'expired'
-                    except:
-                        pass
+                if expiration_date and is_expired(expiration_date):
+                    status = 'expired'
                 
                 all_containers.append({
                     'host_id': host['id'],
@@ -1092,6 +1135,66 @@ def get_host_stats(host_id):
         return jsonify({'error': str(e)}), 500
 
 
+# Background thread to monitor expired containers
+# This must be defined at module level so it runs regardless of how the app is started
+# (e.g., via `python app.py`, `flask run`, `gunicorn`, etc.)
+def monitor_expired_containers():
+    """Background thread to stop expired containers and remove old ones"""
+    while True:
+        try:
+            for host in host_manager.hosts:
+                client = host_manager.get_client(host['id'])
+                if not client:
+                    continue
+                
+                try:
+                    containers = client.containers.list(all=True)
+                    for container in containers:
+                        env_vars = container.attrs.get('Config', {}).get('Env', [])
+                        expiration_date = None
+                        
+                        for env in env_vars:
+                            if env.startswith('EXPIRATION_DATE='):
+                                expiration_date = env.split('=', 1)[1]
+                                break
+                        
+                        if expiration_date:
+                            # Stop container if expired and still running
+                            if is_expired(expiration_date) and container.status == 'running':
+                                print(f"[Expiration Monitor] Stopping expired container: {container.name} (expired at {expiration_date})")
+                                container.stop()
+                            
+                            # Remove container if expired for more than 7 days
+                            if is_past_removal_date(expiration_date, days=7):
+                                print(f"[Expiration Monitor] Removing expired container (>7 days): {container.name}")
+                                container.remove(force=True)
+                except Exception as e:
+                    print(f"[Expiration Monitor] Error monitoring containers on host {host['name']}: {e}")
+        except Exception as e:
+            print(f"[Expiration Monitor] Error in monitor thread: {e}")
+        
+        # Check every 60 seconds (1 minute) for more responsive expiration handling
+        time.sleep(60)
+
+
+# Thread safety: use a lock to prevent multiple threads from starting the monitor
+_monitor_thread_lock = threading.Lock()
+_monitor_thread_started = False
+
+def _start_monitor_thread():
+    """Start the expiration monitoring thread if not already started (thread-safe)"""
+    global _monitor_thread_started
+    with _monitor_thread_lock:
+        if not _monitor_thread_started:
+            monitor_thread = threading.Thread(target=monitor_expired_containers, daemon=True)
+            monitor_thread.start()
+            print("[*] Started container expiration monitor thread (checking every 60 seconds)")
+            _monitor_thread_started = True
+
+# Start the monitor thread when the module is loaded
+_start_monitor_thread()
+
+
 if __name__ == '__main__':
     # Ensure data directory exists
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -1099,56 +1202,5 @@ if __name__ == '__main__':
     # Add local host if no hosts exist
     if not host_manager.hosts:
         host_manager.add_host('Local Docker', 'local', 'Local Docker daemon via socket')
-    
-    # Start background thread to monitor expired containers
-    def monitor_expired_containers():
-        """Background thread to stop expired containers and remove old ones"""
-        while True:
-            try:
-                for host in host_manager.hosts:
-                    client = host_manager.get_client(host['id'])
-                    if not client:
-                        continue
-                    
-                    try:
-                        containers = client.containers.list(all=True)
-                        for container in containers:
-                            env_vars = container.attrs.get('Config', {}).get('Env', [])
-                            expiration_date = None
-                            
-                            for env in env_vars:
-                                if env.startswith('EXPIRATION_DATE='):
-                                    expiration_date = env.split('=', 1)[1]
-                                    break
-                            
-                            if expiration_date:
-                                try:
-                                    exp_dt = datetime.fromisoformat(expiration_date)
-                                    now = datetime.now()
-                                    
-                                    # Stop container if expired and still running
-                                    if now > exp_dt and container.status == 'running':
-                                        print(f"Stopping expired container: {container.name}")
-                                        container.stop()
-                                    
-                                    # Remove container if expired for more than 7 days
-                                    removal_date = exp_dt + timedelta(days=7)
-                                    if now > removal_date:
-                                        print(f"Removing expired container (>7 days): {container.name}")
-                                        container.remove(force=True)
-                                except Exception as e:
-                                    print(f"Error processing expiration for {container.name}: {e}")
-                    except Exception as e:
-                        print(f"Error monitoring containers on host {host['name']}: {e}")
-            except Exception as e:
-                print(f"Error in monitor thread: {e}")
-            
-            # Check every 5 minutes
-            time.sleep(300)
-    
-    # Start monitoring thread
-    monitor_thread = threading.Thread(target=monitor_expired_containers, daemon=True)
-    monitor_thread.start()
-    print("[*] Started container expiration monitor thread")
     
     app.run(host='0.0.0.0', port=5000, debug=os.environ.get('DEBUG', 'False').lower() == 'true')
