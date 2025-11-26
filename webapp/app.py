@@ -24,6 +24,13 @@ class DockerHostManager:
     def __init__(self, hosts_file):
         self.hosts_file = hosts_file
         self.hosts = self.load_hosts()
+        self.next_id = self._get_next_id()
+    
+    def _get_next_id(self):
+        """Get the next available ID"""
+        if not self.hosts:
+            return 0
+        return max(host['id'] for host in self.hosts) + 1
     
     def load_hosts(self):
         """Load Docker hosts from configuration file"""
@@ -55,15 +62,24 @@ class DockerHostManager:
         self.save_hosts()
         return host
     
+    def add_host(self, name, url, description=''):
+        """Add a new Docker host"""
+        host = {
+            'id': self.next_id,
+            'name': name,
+            'url': url,
+            'description': description,
+            'added_at': datetime.now().isoformat()
+        }
+        self.hosts.append(host)
+        self.next_id += 1
+        self.save_hosts()
+        return host
+    
     def remove_host(self, host_id):
         """Remove a Docker host"""
         self.hosts = [h for h in self.hosts if h['id'] != host_id]
-        # Reindex
-        for i, host in enumerate(self.hosts):
-            host['id'] = i
         self.save_hosts()
-    
-    def get_host(self, host_id):
         """Get a specific Docker host"""
         for host in self.hosts:
             if host['id'] == host_id:
