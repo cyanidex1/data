@@ -469,6 +469,10 @@
             <div class="card-header">
                 <span class="icon-container"></span> Running Containers
                 <div style="display: flex; gap: 8px;">
+                    {% if can_edit %}
+                    <button onclick="document.getElementById('import-file-input').click()" class="btn btn-secondary btn-sm"><span class="icon-add"></span> Import Keys</button>
+                    <input type="file" id="import-file-input" accept=".csv" style="display: none;" onchange="importKeys(this)">
+                    {% endif %}
                     <button onclick="exportKeys()" class="btn btn-secondary btn-sm"><span class="icon-export"></span> Export Keys</button>
                     <button onclick="refreshContainers()" class="btn btn-secondary btn-sm"><span class="icon-refresh"></span> Refresh</button>
                 </div>
@@ -857,6 +861,58 @@
                 window.location.href = '/api/containers/export-keys';
             } catch (error) {
                 showAlert('Error exporting keys: ' + error.message, 'error');
+            }
+        }
+        
+        async function importKeys(input) {
+            const file = input.files[0];
+            if (!file) return;
+            
+            if (!file.name.endsWith('.csv')) {
+                showAlert('Please select a CSV file', 'error');
+                input.value = '';
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                showAlert('Importing keys...', 'success');
+                const response = await fetch('/api/containers/import-keys', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    const summary = data.summary;
+                    let message = `Import complete: ${summary.imported} imported`;
+                    if (summary.skipped > 0) message += `, ${summary.skipped} skipped`;
+                    if (summary.failed > 0) message += `, ${summary.failed} failed`;
+                    
+                    showAlert(message, summary.failed > 0 ? 'error' : 'success');
+                    
+                    // Show detailed results if there are failures
+                    if (summary.failed > 0 && data.details.failed.length > 0) {
+                        console.log('Failed imports:', data.details.failed);
+                        setTimeout(() => {
+                            const failures = data.details.failed.slice(0, 3).map(f => `Row ${f.row}: ${f.error}`).join('; ');
+                            showAlert('First failures: ' + failures, 'error');
+                        }, 5500);
+                    }
+                    
+                    // Refresh container list
+                    refreshContainers();
+                } else {
+                    showAlert('Import failed: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error importing keys: ' + error.message, 'error');
+            } finally {
+                // Reset file input
+                input.value = '';
             }
         }
         
