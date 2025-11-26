@@ -4,6 +4,12 @@ A web-based control panel for managing Docker containers running Datagram nodes 
 
 ![Control Panel Screenshot](https://github.com/user-attachments/assets/87489b65-e330-411d-ab3b-15f8a3e1b131)
 
+## ⚡ Quick Start (One-Liner)
+
+```bash
+docker build --platform linux/amd64 -t datagram . && SECRET_KEY=$(openssl rand -hex 32) ADMIN_PASSWORD=$(openssl rand -base64 16) docker compose up -d && echo "Admin password: $ADMIN_PASSWORD"
+```
+
 ## 🚀 Getting Started in 3 Steps
 
 ### Step 1: Build the Datagram Image
