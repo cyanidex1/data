@@ -151,17 +151,33 @@ class CredentialsDB:
             cursor = conn.cursor()
             now = datetime.now().isoformat()
             
-            # Check if credential exists
-            if license_key:
+            # Check if credential exists based on node type's auth type
+            # Use NODE_TYPES to determine the correct credential field to match
+            node_config = NODE_TYPES.get(node_type, {})
+            auth_type = node_config.get('auth_type', 'api_key')
+            
+            if auth_type == 'api_key' and license_key:
                 cursor.execute(
                     'SELECT id FROM credentials WHERE host_name = ? AND node_type = ? AND license_key = ?',
                     (host_name, node_type, license_key)
                 )
-            else:
+            elif auth_type == 'email_password' and email:
                 cursor.execute(
                     'SELECT id FROM credentials WHERE host_name = ? AND node_type = ? AND email = ?',
                     (host_name, node_type, email)
                 )
+            else:
+                # Fallback: try to match on license_key first, then email
+                if license_key:
+                    cursor.execute(
+                        'SELECT id FROM credentials WHERE host_name = ? AND node_type = ? AND license_key = ?',
+                        (host_name, node_type, license_key)
+                    )
+                else:
+                    cursor.execute(
+                        'SELECT id FROM credentials WHERE host_name = ? AND node_type = ? AND email = ?',
+                        (host_name, node_type, email)
+                    )
             
             existing = cursor.fetchone()
             
