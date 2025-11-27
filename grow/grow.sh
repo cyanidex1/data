@@ -8,6 +8,7 @@ domain="growblockchain.net"
 env="prod"
 version="v2.6.1-b"
 arch=$(uname -m)
+node_name="${NODE_NAME:-grow-node}"
 
 # Check for params
 while getopts b:c:e:a:v:d: flag
@@ -21,6 +22,16 @@ do
         d) domain=${OPTARG};;
     esac
 done
+
+# Validate required environment variables
+if [[ -z "$NODE_EMAIL" ]]; then
+    echo "ERR: NODE_EMAIL environment variable is required"
+    exit 1
+fi
+if [[ -z "$NODE_PASSWORD" ]]; then
+    echo "ERR: NODE_PASSWORD environment variable is required"
+    exit 1
+fi
 
 # Validate required variables
 if [[ -z "$brand" ]]; then
@@ -77,15 +88,51 @@ while true; do
 
     # Auto-fill configuration using expect
     expect <<EOF
+        set timeout 30
         spawn $node config
-        expect "Grow Username or Email:"
-        send "hkabir5390@gmail.com\r"
-        expect "Grow Password:"
-        send "Hk07@#52\r"
-        expect "Grow Node Name:"
-        send "grow-node\r"
+        expect {
+            "Grow Username or Email:" {
+                send "${NODE_EMAIL}\r"
+            }
+            timeout {
+                puts "Timeout waiting for email prompt"
+                exit 1
+            }
+            eof {
+                puts "Process exited before email prompt"
+                exit 1
+            }
+        }
+        expect {
+            "Grow Password:" {
+                send "${NODE_PASSWORD}\r"
+            }
+            timeout {
+                puts "Timeout waiting for password prompt"
+                exit 1
+            }
+            eof {
+                puts "Process exited before password prompt"
+                exit 1
+            }
+        }
+        expect {
+            "Grow Node Name:" {
+                send "${node_name}\r"
+            }
+            timeout {
+                puts "Timeout waiting for node name prompt"
+                exit 1
+            }
+            eof {
+                puts "Process exited before node name prompt"
+                exit 1
+            }
+        }
         expect eof
 EOF
+
+    echo "Grow configuration complete!"
 
     # Run the node with logging
     NODE_LOG_LEVEL=$log $node

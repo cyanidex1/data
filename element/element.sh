@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 set -e
 
-# Default variables for Elevate Node
+# Default variables for Element Node
 brand="element"
 chain="element"
 domain="elementunited.com"
 env="prod"
 version="v2.6.1-b"
 arch=$(uname -m)
+node_name="${NODE_NAME:-element-node}"
 
 # Check for params
 while getopts b:c:e:a:v:d: flag
@@ -21,6 +22,16 @@ do
         d) domain=${OPTARG};;
     esac
 done
+
+# Validate required environment variables
+if [[ -z "$NODE_EMAIL" ]]; then
+    echo "ERR: NODE_EMAIL environment variable is required"
+    exit 1
+fi
+if [[ -z "$NODE_PASSWORD" ]]; then
+    echo "ERR: NODE_PASSWORD environment variable is required"
+    exit 1
+fi
 
 # Validate required variables
 if [[ -z "$brand" ]]; then
@@ -77,15 +88,51 @@ while true; do
 
     # Auto-fill configuration using expect
     expect <<EOF
+        set timeout 30
         spawn $node config
-        expect "Element Username or Email:"
-        send "nurulafser1984@gmail.com\r"
-        expect "Element Password:"
-        send "Afser@981836#1984\r"
-        expect "Element Node Name:"
-        send "element-node\r"
+        expect {
+            "Element Username or Email:" {
+                send "${NODE_EMAIL}\r"
+            }
+            timeout {
+                puts "Timeout waiting for email prompt"
+                exit 1
+            }
+            eof {
+                puts "Process exited before email prompt"
+                exit 1
+            }
+        }
+        expect {
+            "Element Password:" {
+                send "${NODE_PASSWORD}\r"
+            }
+            timeout {
+                puts "Timeout waiting for password prompt"
+                exit 1
+            }
+            eof {
+                puts "Process exited before password prompt"
+                exit 1
+            }
+        }
+        expect {
+            "Element Node Name:" {
+                send "${node_name}\r"
+            }
+            timeout {
+                puts "Timeout waiting for node name prompt"
+                exit 1
+            }
+            eof {
+                puts "Process exited before node name prompt"
+                exit 1
+            }
+        }
         expect eof
 EOF
+
+    echo "Element configuration complete!"
 
     # Run the node with logging
     NODE_LOG_LEVEL=$log $node

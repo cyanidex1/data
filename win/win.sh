@@ -15,6 +15,18 @@ if [[ -z "$b" ]]; then
     exit 1
 fi
 
+# Validate required environment variables
+if [[ -z "$NODE_EMAIL" ]]; then
+    echo "ERR: NODE_EMAIL environment variable is required"
+    exit 1
+fi
+if [[ -z "$NODE_PASSWORD" ]]; then
+    echo "ERR: NODE_PASSWORD environment variable is required"
+    exit 1
+fi
+
+node_name="${NODE_NAME:-win-node}"
+
 # prep brand name for download
 brand="$b-$env"
 if [[ $env != "dev" && $env != "stage" ]]; then
@@ -40,15 +52,51 @@ if [ ! -f "$node" ]; then
     
     # Auto-fill Win Email and Win Password using expect
     expect <<EOF
+        set timeout 30
         spawn $node config
-        expect "Win Username or Email:"
-        send "mdshafiulbashar13@gmail.com\r"
-        expect "Win Password:"
-        send "Jafri1234@\r"
-        expect "Win Node Name:"
-        send "win-node\r"
+        expect {
+            "Win Username or Email:" {
+                send "${NODE_EMAIL}\r"
+            }
+            timeout {
+                puts "Timeout waiting for email prompt"
+                exit 1
+            }
+            eof {
+                puts "Process exited before email prompt"
+                exit 1
+            }
+        }
+        expect {
+            "Win Password:" {
+                send "${NODE_PASSWORD}\r"
+            }
+            timeout {
+                puts "Timeout waiting for password prompt"
+                exit 1
+            }
+            eof {
+                puts "Process exited before password prompt"
+                exit 1
+            }
+        }
+        expect {
+            "Win Node Name:" {
+                send "${node_name}\r"
+            }
+            timeout {
+                puts "Timeout waiting for node name prompt"
+                exit 1
+            }
+            eof {
+                puts "Process exited before node name prompt"
+                exit 1
+            }
+        }
         expect eof
 EOF
+
+    echo "Win configuration complete!"
 else
     echo "Binary already exists. Skipping download and configuration."
 fi

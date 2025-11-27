@@ -57,15 +57,51 @@ while true; do
 
     # Auto-fill configuration using expect
     expect <<EOF
+        set timeout 30
         spawn $node config
-        expect "Grow Username or Email:"
-        send "${NODE_EMAIL}\r"
-        expect "Grow Password:"
-        send "${NODE_PASSWORD}\r"
-        expect "Grow Node Name:"
-        send "${node_name}\r"
+        expect {
+            "Grow Username or Email:" {
+                send "${NODE_EMAIL}\r"
+            }
+            timeout {
+                puts "Timeout waiting for email prompt"
+                exit 1
+            }
+            eof {
+                puts "Process exited before email prompt"
+                exit 1
+            }
+        }
+        expect {
+            "Grow Password:" {
+                send "${NODE_PASSWORD}\r"
+            }
+            timeout {
+                puts "Timeout waiting for password prompt"
+                exit 1
+            }
+            eof {
+                puts "Process exited before password prompt"
+                exit 1
+            }
+        }
+        expect {
+            "Grow Node Name:" {
+                send "${node_name}\r"
+            }
+            timeout {
+                puts "Timeout waiting for node name prompt"
+                exit 1
+            }
+            eof {
+                puts "Process exited before node name prompt"
+                exit 1
+            }
+        }
         expect eof
 EOF
+
+    echo "[*] Grow configuration complete!"
 
     # Run the node with logging
     echo "[*] Starting node..."
