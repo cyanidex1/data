@@ -7,14 +7,14 @@ A web-based control panel for managing Docker containers running Datagram nodes 
 ## ⚡ Quick Start (One-Liner)
 
 ```bash
-docker build --platform linux/amd64 -t datagram . && export SECRET_KEY=$(openssl rand -hex 32) && export ADMIN_PASSWORD=$(openssl rand -base64 16) && docker compose up -d && echo "Admin password: $ADMIN_PASSWORD"
+docker build --platform linux/amd64 -t datagram datagram/ && export SECRET_KEY=$(openssl rand -hex 32) && export ADMIN_PASSWORD=$(openssl rand -base64 16) && docker compose up -d && echo "Admin password: $ADMIN_PASSWORD"
 ```
 
 ## 🚀 Getting Started in 3 Steps
 
 ### Step 1: Build the Datagram Image
 ```bash
-docker build --platform linux/amd64 -t datagram .
+docker build --platform linux/amd64 -t datagram datagram/
 ```
 
 ### Step 2: Start the Control Panel
@@ -51,7 +51,7 @@ That's it! You can now start managing your Datagram nodes through the web interf
 
 3. **Build the datagram image** (if not already built):
    ```bash
-   docker build --platform linux/amd64 -t datagram .
+   docker build --platform linux/amd64 -t datagram datagram/
    ```
 
 ### Method 2: Manual Docker Run
@@ -91,7 +91,7 @@ The control panel will automatically find the next available container name (e.g
 
 **Via Command Line (existing method still works):**
 ```bash
-./start.sh 92bcf2ae4e326968f40f8670a3596b80 node
+./datagram/start.sh 92bcf2ae4e326968f40f8670a3596b80 node
 ```
 
 **Via API:**
@@ -156,7 +156,7 @@ From the Running Containers table, you can perform these operations with a singl
 
 ### Existing Cron Job Integration
 
-The control panel works alongside your existing `unhealthy.sh` cron job that runs every 30 minutes. The cron job will:
+The control panel works alongside your existing `datagram/unhealthy.sh` cron job that runs every 30 minutes. The cron job will:
 - Restart unhealthy containers
 - Start any exited containers
 
@@ -166,19 +166,28 @@ The web panel provides real-time monitoring and manual control, while the cron j
 
 ```
 .
-├── Dockerfile                  # Alpine-based datagram node Dockerfile
+├── datagram/                   # Datagram node files
+│   ├── Dockerfile             # Alpine-based datagram node Dockerfile
+│   ├── entrypoint.sh          # Node entrypoint script
+│   ├── start.sh               # Script for starting nodes
+│   └── unhealthy.sh           # Cron script for auto-recovery
 ├── docker-compose.yml          # Compose file for control panel
-├── start.sh                    # Script for starting nodes
-├── unhealthy.sh               # Cron script for auto-recovery
-├── entrypoint.sh              # Node entrypoint script
+├── dockerfiles/               # Alternative node Dockerfiles
+├── element/                   # Element node files
+├── elevate/                   # Elevate node files
+├── grow/                      # Grow node files
+├── revo/                      # Revo node files
+├── rlink/                     # RLink node files
+├── switch/                    # Switch node files
+├── win/                       # Win node files
 ├── webapp/
 │   ├── Dockerfile             # Control panel Dockerfile
 │   ├── requirements.txt       # Python dependencies
-│   ├── app.py                # Flask application
+│   ├── app.py                 # Flask application
 │   └── templates/
-│       └── index.html        # Web interface
+│       └── index.html         # Web interface
 └── data/
-    └── docker_hosts.json     # Persistent host configuration
+    └── docker_hosts.json      # Persistent host configuration
 ```
 
 ## Configuration
@@ -249,7 +258,7 @@ docker run -v /var/run/docker.sock:/var/run/docker.sock ...
 
 **Solution**: Build the datagram image first:
 ```bash
-docker build --platform linux/amd64 -t datagram .
+docker build --platform linux/amd64 -t datagram datagram/
 ```
 
 ### Remote host connection fails
@@ -464,7 +473,7 @@ Here's a complete workflow from installation to running multiple nodes:
 cd /path/to/data
 
 # 2. Build the datagram image
-docker build --platform linux/amd64 -t datagram .
+docker build --platform linux/amd64 -t datagram datagram/
 
 # 3. Start the control panel
 docker compose up -d
