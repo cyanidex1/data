@@ -983,6 +983,91 @@ def get_container_logs(host_id, container_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/containers/<host_id>/<container_id>/update-expiration', methods=['POST'])
+@login_required
+def update_container_expiration(host_id, container_id):
+    """Update container expiration date - requires edit permission
+    
+    This recreates the container with the updated expiration date environment variable.
+    """
+    if not current_user.can_edit():
+        return jsonify({'error': 'Edit privileges required'}), 403
+    
+    data = request.json
+    expiration_date = data.get('expiration_date')
+    
+    try:
+        client = host_manager.get_client(int(host_id))
+        if not client:
+            return jsonify({'error': 'Could not connect to Docker host'}), 500
+        
+        container = client.containers.get(container_id)
+        
+        # Get current container configuration
+        config = container.attrs.get('Config', {})
+        env_vars = config.get('Env', [])
+        # Safely get image name - check if tags list has items
+        if container.image.tags and len(container.image.tags) > 0:
+            image = container.image.tags[0]
+        else:
+            image = container.image.id
+        container_name = container.name
+        
+        # Parse existing environment variables
+        new_env = {}
+        for env in env_vars:
+            if '=' in env:
+                key, value = env.split('=', 1)
+                new_env[key] = value
+        
+        # Update or remove expiration date
+        if expiration_date:
+            try:
+                # Validate the expiration date format
+                datetime.fromisoformat(expiration_date.replace('Z', '+00:00'))
+                new_env['EXPIRATION_DATE'] = expiration_date
+            except (ValueError, AttributeError):
+                return jsonify({'error': 'Invalid expiration date format. Use ISO format (YYYY-MM-DDTHH:MM:SS)'}), 400
+        else:
+            # Remove expiration date if empty (set to never expire)
+            new_env.pop('EXPIRATION_DATE', None)
+        
+        # Get host config for restart policy
+        host_config = container.attrs.get('HostConfig', {})
+        restart_policy = host_config.get('RestartPolicy', {'Name': 'unless-stopped'})
+        mem_limit = host_config.get('Memory', 104857600)  # 100MB default
+        memswap_limit = host_config.get('MemorySwap', 209715200)  # 200MB default
+        
+        # Stop and remove the old container
+        was_running = container.status == 'running'
+        container.remove(force=True)
+        
+        # Create new container with updated expiration date
+        new_container = client.containers.run(
+            image,
+            name=container_name,
+            environment=new_env,
+            platform='linux/amd64',
+            detach=True,
+            restart_policy=restart_policy,
+            mem_limit=mem_limit,
+            memswap_limit=memswap_limit
+        )
+        
+        # If the original container was not running, stop the new one
+        if not was_running:
+            new_container.stop()
+        
+        return jsonify({
+            'success': True,
+            'container_id': new_container.id[:12],
+            'expiration_date': expiration_date if expiration_date else None
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/containers/export-keys', methods=['GET'])
 @login_required
 def export_keys():

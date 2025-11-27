@@ -33,6 +33,7 @@ That's it! You can now start managing your Datagram nodes through the web interf
 - 📊 **Monitor Containers**: View all running containers across multiple hosts in real-time
 - 🖥️ **Multi-Host Management**: Add and manage multiple Docker hosts from a single interface
 - 🎮 **Container Operations**: Start, stop, restart, kill, and remove containers
+- ✏️ **Edit Expiration**: Modify expiration dates for running and expired containers
 - 📝 **View Logs**: Check container logs directly from the web interface
 - 🔄 **Auto-Refresh**: Dashboard automatically refreshes every 10 seconds
 - 🐳 **Docker Integration**: Works seamlessly with the existing `unhealthy.sh` cron job
@@ -135,6 +136,7 @@ From the Running Containers table, you can perform these operations with a singl
 - **Start**: Start a stopped container
 - **Stop**: Gracefully stop a running container (sends SIGTERM)
 - **Restart**: Restart a container (useful for applying changes)
+- **Edit**: Modify the expiration date of any container (recreates the container)
 - **Kill**: Forcefully stop a container (sends SIGKILL)
 - **Remove**: Delete a container permanently (cannot be undone)
 - **Logs**: View the last 100 lines of container logs

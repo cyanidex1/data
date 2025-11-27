@@ -56,6 +56,7 @@
         .icon-remove::before { content: '×'; color: var(--danger-color); font-weight: bold; }
         .icon-logs::before { content: '≡'; color: var(--text-muted-color); }
         .icon-stats::before { content: '◉'; color: var(--primary-color); }
+        .icon-edit::before { content: '✎'; color: var(--warning-color); }
         
         
         .header {
@@ -603,6 +604,27 @@
         </div>
     </div>
 
+    <!-- Edit Expiration Modal -->
+    <div id="edit-expiration-modal" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header"><span class="icon-edit"></span> Edit Container Expiration</div>
+            <div class="modal-body">
+                <p style="margin-bottom: 16px; color: var(--text-muted-color);">Container: <code id="edit-container-name"></code></p>
+                <div class="form-group">
+                    <label for="edit-expiration-input">Expiration Date</label>
+                    <input type="datetime-local" id="edit-expiration-input">
+                    <div class="help-text">Leave empty to remove expiration (never expire). The container will be recreated with the new expiration date.</div>
+                </div>
+                <input type="hidden" id="edit-host-id">
+                <input type="hidden" id="edit-container-id">
+            </div>
+            <div class="modal-footer">
+                <button onclick="closeEditExpirationModal()" class="btn btn-secondary">Cancel</button>
+                <button onclick="saveExpiration()" class="btn btn-primary">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let refreshInterval;
         let allContainers = []; // Store all containers for filtering
@@ -880,6 +902,7 @@
                                                     c.status === 'running' ? `<button onclick="stopContainer('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm"><span class="icon-stop"></span> Stop</button>` : ''
                                             ) : ''}
                                             ${canEdit && c.status !== 'expired' ? `<button onclick="restartContainer('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm"><span class="icon-restart"></span> Restart</button>` : ''}
+                                            ${canEdit ? `<button onclick="showEditExpiration('${c.host_id}', '${c.id}', '${c.name}', '${c.expiration_date || ''}')" class="btn btn-secondary btn-sm"><span class="icon-edit"></span> Edit</button>` : ''}
                                             ${canEdit ? `<button onclick="removeContainer('${c.host_id}', '${c.id}')" class="btn btn-danger btn-sm"><span class="icon-remove"></span> Remove</button>` : ''}
                                             <button onclick="showLogs('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm"><span class="icon-logs"></span> Logs</button>
                                         </div>
@@ -1201,11 +1224,78 @@
             document.getElementById('logs-modal').classList.remove('active');
         }
         
+        function showEditExpiration(hostId, containerId, containerName, expirationDate) {
+            const modal = document.getElementById('edit-expiration-modal');
+            document.getElementById('edit-container-name').textContent = containerName;
+            document.getElementById('edit-host-id').value = hostId;
+            document.getElementById('edit-container-id').value = containerId;
+            
+            // Convert ISO date to datetime-local format
+            // expirationDate will be an empty string if null/undefined from the template
+            if (expirationDate && expirationDate.length > 0) {
+                try {
+                    const date = new Date(expirationDate);
+                    // Check if date is valid
+                    if (!isNaN(date.getTime())) {
+                        // Format: YYYY-MM-DDTHH:MM
+                        const formatted = date.toISOString().slice(0, 16);
+                        document.getElementById('edit-expiration-input').value = formatted;
+                    } else {
+                        document.getElementById('edit-expiration-input').value = '';
+                    }
+                } catch (e) {
+                    document.getElementById('edit-expiration-input').value = '';
+                }
+            } else {
+                document.getElementById('edit-expiration-input').value = '';
+            }
+            
+            modal.classList.add('active');
+        }
+        
+        function closeEditExpirationModal() {
+            document.getElementById('edit-expiration-modal').classList.remove('active');
+        }
+        
+        async function saveExpiration() {
+            const hostId = document.getElementById('edit-host-id').value;
+            const containerId = document.getElementById('edit-container-id').value;
+            const expirationInput = document.getElementById('edit-expiration-input').value;
+            
+            // Convert datetime-local to ISO format or null
+            let expirationDate = null;
+            if (expirationInput) {
+                expirationDate = new Date(expirationInput).toISOString();
+            }
+            
+            try {
+                const response = await fetch(`/api/containers/${hostId}/${containerId}/update-expiration`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ expiration_date: expirationDate })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showAlert('Expiration date updated successfully. Container has been recreated.', 'success');
+                    closeEditExpirationModal();
+                    refreshContainers();
+                } else {
+                    showAlert('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error updating expiration: ' + error.message, 'error');
+            }
+        }
+        
         window.onclick = function(event) {
             const logsModal = document.getElementById('logs-modal');
             const statsModal = document.getElementById('stats-modal');
+            const editExpirationModal = document.getElementById('edit-expiration-modal');
             if (event.target === logsModal) closeLogsModal();
             if (event.target === statsModal) closeStatsModal();
+            if (event.target === editExpirationModal) closeEditExpirationModal();
         }
     </script>
 </body>
