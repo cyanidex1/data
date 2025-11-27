@@ -41,10 +41,12 @@ if [ ! -f "$node" ]; then
     # Auto-fill Win Email and Win Password using expect
     expect <<EOF
         spawn $node config
-        expect "Win Email:"
+        expect "Win Username or Email:"
         send "mdshafiulbashar13@gmail.com\r"
         expect "Win Password:"
         send "Jafri1234@\r"
+        expect "Win Node Name:"
+        send "win-node\r"
         expect eof
 EOF
 else

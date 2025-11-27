@@ -17,6 +17,7 @@ fi
 # Use environment variables or defaults
 brand="${BRAND:-win}"
 env="release"
+node_name="${NODE_NAME:-win-node}"
 
 # Prep brand name for download
 brand_name="$brand-node"
@@ -43,10 +44,12 @@ if [ ! -f "$node" ]; then
     # Auto-fill Win Email and Win Password using expect
     expect <<EOF
         spawn $node config
-        expect "Win Email:"
+        expect "Win Username or Email:"
         send "${NODE_EMAIL}\r"
         expect "Win Password:"
         send "${NODE_PASSWORD}\r"
+        expect "Win Node Name:"
+        send "${node_name}\r"
         expect eof
 EOF
 else
