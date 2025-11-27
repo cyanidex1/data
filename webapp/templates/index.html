@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Datagram Control Panel</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
     <style>
         :root {
             --bg-color: #0d1117;
@@ -476,7 +477,7 @@
                     <div id="api-key-fields" style="display: none;">
                         <div class="form-group">
                             <label for="key-input">Datagram Key (32 characters, 0-9 and a-z only)</label>
-                            <input type="text" id="key-input" placeholder="Enter 32-character key" maxlength="32" pattern="[0-9a-z]{32}">
+                            <input type="text" id="key-input" placeholder="Enter 32-character key" maxlength="32" pattern="[0-9a-z]{32}" disabled>
                             <div class="help-text">The key will be used as the container name. Only lowercase letters and numbers allowed.</div>
                         </div>
                     </div>
@@ -485,11 +486,11 @@
                     <div id="email-password-fields" style="display: none;">
                         <div class="form-group">
                             <label for="email-input">Email</label>
-                            <input type="email" id="email-input" placeholder="Enter email address">
+                            <input type="email" id="email-input" placeholder="Enter email address" disabled>
                         </div>
                         <div class="form-group">
                             <label for="password-input">Password</label>
-                            <input type="password" id="password-input" placeholder="Enter password">
+                            <input type="password" id="password-input" placeholder="Enter password" disabled>
                         </div>
                         <div class="form-group">
                             <label for="node-name-input">Node Name (Optional)</label>
@@ -513,13 +514,15 @@
         <div class="card">
             <div class="card-header">
                 <span class="icon-container"></span> Running Containers
-                <div style="display: flex; gap: 8px; align-items: center;">
+                <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                     <input type="text" id="container-search" placeholder="Search containers..." style="width: 200px; padding: 6px 12px; font-size: 12px;" oninput="filterContainers()">
                     {% if can_edit %}
-                    <button onclick="document.getElementById('import-file-input').click()" class="btn btn-secondary btn-sm"><span class="icon-add"></span> Import Keys</button>
+                    <button onclick="syncCredentials()" class="btn btn-secondary btn-sm" title="Save container credentials to database"><span class="icon-refresh"></span> Sync to DB</button>
+                    <button onclick="startAllFromDB()" class="btn btn-secondary btn-sm" title="Start all containers from saved credentials"><span class="icon-play"></span> Start All from DB</button>
+                    <button onclick="document.getElementById('import-file-input').click()" class="btn btn-secondary btn-sm"><span class="icon-add"></span> Import</button>
                     <input type="file" id="import-file-input" accept=".csv" style="display: none;" onchange="importKeys(this)">
                     {% endif %}
-                    <button onclick="exportKeys()" class="btn btn-secondary btn-sm"><span class="icon-export"></span> Export Keys</button>
+                    <button onclick="exportKeys()" class="btn btn-secondary btn-sm"><span class="icon-export"></span> Export</button>
                     <button onclick="refreshContainers()" class="btn btn-secondary btn-sm"><span class="icon-refresh"></span> Refresh</button>
                 </div>
             </div>
@@ -737,11 +740,21 @@
             const apiKeyFields = document.getElementById('api-key-fields');
             const emailPasswordFields = document.getElementById('email-password-fields');
             const descriptionDiv = document.getElementById('node-type-description');
+            const keyInput = document.getElementById('key-input');
+            const emailInput = document.getElementById('email-input');
+            const passwordInput = document.getElementById('password-input');
             
             if (!selectedType || !nodeTypes[selectedType]) {
                 apiKeyFields.style.display = 'none';
                 emailPasswordFields.style.display = 'none';
                 descriptionDiv.textContent = '';
+                // Disable and remove required from all hidden fields to prevent validation errors
+                keyInput.required = false;
+                keyInput.disabled = true;
+                emailInput.required = false;
+                emailInput.disabled = true;
+                passwordInput.required = false;
+                passwordInput.disabled = true;
                 return;
             }
             
@@ -751,15 +764,23 @@
             if (config.auth_type === 'api_key') {
                 apiKeyFields.style.display = 'block';
                 emailPasswordFields.style.display = 'none';
-                document.getElementById('key-input').required = true;
-                document.getElementById('email-input').required = false;
-                document.getElementById('password-input').required = false;
+                keyInput.required = true;
+                keyInput.disabled = false;
+                // Disable email/password fields when hidden to prevent validation issues
+                emailInput.required = false;
+                emailInput.disabled = true;
+                passwordInput.required = false;
+                passwordInput.disabled = true;
             } else {
                 apiKeyFields.style.display = 'none';
                 emailPasswordFields.style.display = 'block';
-                document.getElementById('key-input').required = false;
-                document.getElementById('email-input').required = true;
-                document.getElementById('password-input').required = true;
+                // Disable key input when hidden to prevent validation issues
+                keyInput.required = false;
+                keyInput.disabled = true;
+                emailInput.required = true;
+                emailInput.disabled = false;
+                passwordInput.required = true;
+                passwordInput.disabled = false;
             }
         }
         
@@ -1157,6 +1178,49 @@
             } finally {
                 // Reset file input
                 input.value = '';
+            }
+        }
+        
+        async function syncCredentials() {
+            if (!confirm('Save all container credentials to the database? This will store credentials for easy restart.')) return;
+            
+            try {
+                showAlert('Syncing credentials to database...', 'success');
+                const response = await fetch('/api/credentials/sync', { method: 'POST' });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    let message = `Synced ${data.synced} credentials to database`;
+                    if (data.errors && data.errors.length > 0) {
+                        message += ` (${data.errors.length} errors)`;
+                    }
+                    showAlert(message, data.errors && data.errors.length > 0 ? 'error' : 'success');
+                } else {
+                    showAlert('Sync failed: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error syncing credentials: ' + error.message, 'error');
+            }
+        }
+        
+        async function startAllFromDB() {
+            if (!confirm('Start all containers from saved credentials? This will start containers for all credentials stored in the database.')) return;
+            
+            try {
+                showAlert('Starting containers from database...', 'success');
+                const response = await fetch('/api/credentials/start-all', { method: 'POST' });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    const summary = data.summary;
+                    let message = `Started: ${summary.started}, Skipped: ${summary.skipped}, Failed: ${summary.failed}`;
+                    showAlert(message, summary.failed > 0 ? 'error' : 'success');
+                    refreshContainers();
+                } else {
+                    showAlert('Start failed: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error starting containers: ' + error.message, 'error');
             }
         }
         
