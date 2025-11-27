@@ -2,7 +2,9 @@ version: '3.8'
 
 services:
   datagram-control-panel:
-    build: ./webapp
+    build:
+      context: .
+      dockerfile: webapp/Dockerfile
     container_name: datagram-control-panel
     ports:
       - "5000:5000"
