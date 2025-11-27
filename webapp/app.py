@@ -96,7 +96,7 @@ NODE_TYPES = {
         'image': 'win-node',
         'auth_type': 'email_password',
         'dockerfile': 'win.Dockerfile',
-        'env_vars': ['NODE_EMAIL', 'NODE_PASSWORD']
+        'env_vars': ['NODE_EMAIL', 'NODE_PASSWORD', 'NODE_NAME']
     }
 }
 

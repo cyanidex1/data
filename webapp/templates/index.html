@@ -721,9 +721,13 @@
                         }
                         updateCredentialFields();
                     }
+                } else {
+                    console.error('Failed to load node types:', response.status);
+                    showAlert('Failed to load node types. Please refresh the page.', 'error');
                 }
             } catch (error) {
                 console.error('Error loading node types:', error);
+                showAlert('Error loading node types. Please refresh the page.', 'error');
             }
         }
         
@@ -957,6 +961,11 @@
             }
             
             const config = nodeTypes[nodeType];
+            if (!config) {
+                showAlert('Node type configuration not loaded. Please refresh the page.', 'error');
+                return;
+            }
+            
             const payload = { 
                 host_id: parseInt(hostId), 
                 node_type: nodeType 
