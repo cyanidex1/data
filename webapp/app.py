@@ -1006,7 +1006,11 @@ def update_container_expiration(host_id, container_id):
         # Get current container configuration
         config = container.attrs.get('Config', {})
         env_vars = config.get('Env', [])
-        image = container.image.tags[0] if container.image.tags else container.image.id
+        # Safely get image name - check if tags list has items
+        if container.image.tags and len(container.image.tags) > 0:
+            image = container.image.tags[0]
+        else:
+            image = container.image.id
         container_name = container.name
         
         # Parse existing environment variables

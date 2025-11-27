@@ -1231,12 +1231,18 @@
             document.getElementById('edit-container-id').value = containerId;
             
             // Convert ISO date to datetime-local format
-            if (expirationDate && expirationDate !== 'null' && expirationDate !== 'undefined') {
+            // expirationDate will be an empty string if null/undefined from the template
+            if (expirationDate && expirationDate.length > 0) {
                 try {
                     const date = new Date(expirationDate);
-                    // Format: YYYY-MM-DDTHH:MM
-                    const formatted = date.toISOString().slice(0, 16);
-                    document.getElementById('edit-expiration-input').value = formatted;
+                    // Check if date is valid
+                    if (!isNaN(date.getTime())) {
+                        // Format: YYYY-MM-DDTHH:MM
+                        const formatted = date.toISOString().slice(0, 16);
+                        document.getElementById('edit-expiration-input').value = formatted;
+                    } else {
+                        document.getElementById('edit-expiration-input').value = '';
+                    }
                 } catch (e) {
                     document.getElementById('edit-expiration-input').value = '';
                 }
