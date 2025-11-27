@@ -8,6 +8,7 @@ domain="r-link.com"
 env="prod"
 version="v2.6.6"
 arch=$(uname -m)
+node_name="${NODE_NAME:-rally-node}"
 
 # Check for params
 while getopts b:c:e:a:v:d: flag
@@ -21,6 +22,16 @@ do
         d) domain=${OPTARG};;
     esac
 done
+
+# Validate required environment variables
+if [[ -z "$NODE_EMAIL" ]]; then
+    echo "ERR: NODE_EMAIL environment variable is required"
+    exit 1
+fi
+if [[ -z "$NODE_PASSWORD" ]]; then
+    echo "ERR: NODE_PASSWORD environment variable is required"
+    exit 1
+fi
 
 # Validate required variables
 if [[ -z "$brand" ]]; then
@@ -77,15 +88,51 @@ while true; do
 
     # Auto-fill configuration using expect
     expect <<EOF
+        set timeout 30
         spawn $node config
-        expect "RLink Username or Email:"
-        send "bakulakterdaria3@gmail.com\r"
-        expect "RLink Password:"
-        send "Afser@981836#1984\r"
-        expect "RLink Node Name:"
-        send "rally-1\r"
+        expect {
+            "RLink Username or Email:" {
+                send "${NODE_EMAIL}\r"
+            }
+            timeout {
+                puts "Timeout waiting for email prompt"
+                exit 1
+            }
+            eof {
+                puts "Process exited before email prompt"
+                exit 1
+            }
+        }
+        expect {
+            "RLink Password:" {
+                send "${NODE_PASSWORD}\r"
+            }
+            timeout {
+                puts "Timeout waiting for password prompt"
+                exit 1
+            }
+            eof {
+                puts "Process exited before password prompt"
+                exit 1
+            }
+        }
+        expect {
+            "RLink Node Name:" {
+                send "${node_name}\r"
+            }
+            timeout {
+                puts "Timeout waiting for node name prompt"
+                exit 1
+            }
+            eof {
+                puts "Process exited before node name prompt"
+                exit 1
+            }
+        }
         expect eof
 EOF
+
+    echo "RLink configuration complete!"
 
     # Run the node with logging
     NODE_LOG_LEVEL=$log $node

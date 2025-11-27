@@ -57,15 +57,51 @@ while true; do
 
     # Auto-fill configuration using expect
     expect <<EOF
+        set timeout 30
         spawn $node config
-        expect "RLink Username or Email:"
-        send "${NODE_EMAIL}\r"
-        expect "RLink Password:"
-        send "${NODE_PASSWORD}\r"
-        expect "RLink Node Name:"
-        send "${node_name}\r"
+        expect {
+            "RLink Username or Email:" {
+                send "${NODE_EMAIL}\r"
+            }
+            timeout {
+                puts "Timeout waiting for email prompt"
+                exit 1
+            }
+            eof {
+                puts "Process exited before email prompt"
+                exit 1
+            }
+        }
+        expect {
+            "RLink Password:" {
+                send "${NODE_PASSWORD}\r"
+            }
+            timeout {
+                puts "Timeout waiting for password prompt"
+                exit 1
+            }
+            eof {
+                puts "Process exited before password prompt"
+                exit 1
+            }
+        }
+        expect {
+            "RLink Node Name:" {
+                send "${node_name}\r"
+            }
+            timeout {
+                puts "Timeout waiting for node name prompt"
+                exit 1
+            }
+            eof {
+                puts "Process exited before node name prompt"
+                exit 1
+            }
+        }
         expect eof
 EOF
+
+    echo "[*] RLink configuration complete!"
 
     # Run the node with logging
     echo "[*] Starting node..."

@@ -43,15 +43,51 @@ if [ ! -f "$node" ]; then
     
     # Auto-fill Win Email and Win Password using expect
     expect <<EOF
+        set timeout 30
         spawn $node config
-        expect "Win Username or Email:"
-        send "${NODE_EMAIL}\r"
-        expect "Win Password:"
-        send "${NODE_PASSWORD}\r"
-        expect "Win Node Name:"
-        send "${node_name}\r"
+        expect {
+            "Win Username or Email:" {
+                send "${NODE_EMAIL}\r"
+            }
+            timeout {
+                puts "Timeout waiting for email prompt"
+                exit 1
+            }
+            eof {
+                puts "Process exited before email prompt"
+                exit 1
+            }
+        }
+        expect {
+            "Win Password:" {
+                send "${NODE_PASSWORD}\r"
+            }
+            timeout {
+                puts "Timeout waiting for password prompt"
+                exit 1
+            }
+            eof {
+                puts "Process exited before password prompt"
+                exit 1
+            }
+        }
+        expect {
+            "Win Node Name:" {
+                send "${node_name}\r"
+            }
+            timeout {
+                puts "Timeout waiting for node name prompt"
+                exit 1
+            }
+            eof {
+                puts "Process exited before node name prompt"
+                exit 1
+            }
+        }
         expect eof
 EOF
+
+    echo "[*] Win configuration complete!"
 else
     echo "[*] Binary already exists. Skipping download and configuration."
 fi
