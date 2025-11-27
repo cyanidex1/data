@@ -4,7 +4,7 @@ Docker Control Panel for Datagram Nodes
 Web application for managing Docker containers across multiple hosts
 """
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session, make_response
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session, make_response, send_from_directory
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 import docker
@@ -13,6 +13,7 @@ import os
 import re
 import threading
 import time
+import sqlite3
 from datetime import datetime, timedelta, timezone
 from io import StringIO
 import csv
@@ -30,6 +31,7 @@ login_manager.login_message = 'Please log in to access the control panel.'
 DATA_DIR = os.environ.get('DATA_DIR', '/data')
 HOSTS_FILE = os.path.join(DATA_DIR, 'docker_hosts.json')
 USERS_FILE = os.path.join(DATA_DIR, 'users.json')
+CREDENTIALS_DB = os.path.join(DATA_DIR, 'credentials.db')
 DEFAULT_IMAGE = 'datagram'
 
 # Node type configurations
@@ -99,6 +101,144 @@ NODE_TYPES = {
         'env_vars': ['NODE_EMAIL', 'NODE_PASSWORD', 'NODE_NAME']
     }
 }
+
+
+class CredentialsDB:
+    """SQLite database for storing container credentials"""
+    
+    def __init__(self, db_path):
+        self.db_path = db_path
+        self.init_db()
+    
+    def get_connection(self):
+        """Get a database connection"""
+        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+    
+    def init_db(self):
+        """Initialize the database schema"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS credentials (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    host_name TEXT NOT NULL,
+                    node_type TEXT NOT NULL,
+                    container_name TEXT,
+                    license_key TEXT,
+                    email TEXT,
+                    password TEXT,
+                    node_name TEXT,
+                    expiration_date TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(host_name, node_type, license_key),
+                    UNIQUE(host_name, node_type, email)
+                )
+            ''')
+            conn.commit()
+        finally:
+            conn.close()
+    
+    def add_credential(self, host_name, node_type, container_name=None, license_key=None, 
+                       email=None, password=None, node_name=None, expiration_date=None):
+        """Add or update a credential"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            now = datetime.now().isoformat()
+            
+            # Check if credential exists
+            if license_key:
+                cursor.execute(
+                    'SELECT id FROM credentials WHERE host_name = ? AND node_type = ? AND license_key = ?',
+                    (host_name, node_type, license_key)
+                )
+            else:
+                cursor.execute(
+                    'SELECT id FROM credentials WHERE host_name = ? AND node_type = ? AND email = ?',
+                    (host_name, node_type, email)
+                )
+            
+            existing = cursor.fetchone()
+            
+            if existing:
+                # Update existing credential
+                cursor.execute('''
+                    UPDATE credentials 
+                    SET container_name = ?, password = ?, node_name = ?, expiration_date = ?, updated_at = ?
+                    WHERE id = ?
+                ''', (container_name, password, node_name, expiration_date, now, existing['id']))
+            else:
+                # Insert new credential
+                cursor.execute('''
+                    INSERT INTO credentials 
+                    (host_name, node_type, container_name, license_key, email, password, node_name, expiration_date, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (host_name, node_type, container_name, license_key, email, password, node_name, expiration_date, now, now))
+            
+            conn.commit()
+            return cursor.lastrowid if not existing else existing['id']
+        finally:
+            conn.close()
+    
+    def get_all_credentials(self):
+        """Get all stored credentials"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM credentials ORDER BY host_name, node_type, created_at')
+            return [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
+    
+    def get_credentials_by_host(self, host_name):
+        """Get credentials for a specific host"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM credentials WHERE host_name = ? ORDER BY node_type, created_at', (host_name,))
+            return [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
+    
+    def delete_credential(self, credential_id):
+        """Delete a credential by ID"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM credentials WHERE id = ?', (credential_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+        finally:
+            conn.close()
+    
+    def delete_by_key(self, host_name, node_type, license_key=None, email=None):
+        """Delete a credential by key or email"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            if license_key:
+                cursor.execute(
+                    'DELETE FROM credentials WHERE host_name = ? AND node_type = ? AND license_key = ?',
+                    (host_name, node_type, license_key)
+                )
+            else:
+                cursor.execute(
+                    'DELETE FROM credentials WHERE host_name = ? AND node_type = ? AND email = ?',
+                    (host_name, node_type, email)
+                )
+            conn.commit()
+            return cursor.rowcount > 0
+        finally:
+            conn.close()
+
+
+# Initialize credentials database
+credentials_db = CredentialsDB(CREDENTIALS_DB)
 
 
 def is_expired(expiration_date_str):
@@ -620,6 +760,327 @@ def get_node_types():
     return jsonify({'node_types': node_types_info})
 
 
+@app.route('/api/credentials', methods=['GET'])
+@login_required
+def list_credentials():
+    """List all stored credentials - requires view permission"""
+    if not current_user.can_view():
+        return jsonify({'error': 'View privileges required'}), 403
+    
+    credentials = credentials_db.get_all_credentials()
+    # Don't expose passwords in the response
+    for cred in credentials:
+        if cred.get('password'):
+            cred['password'] = '********'
+    
+    return jsonify({'credentials': credentials})
+
+
+@app.route('/api/credentials', methods=['POST'])
+@login_required
+def add_credential():
+    """Add a new credential to the database - requires edit permission"""
+    if not current_user.can_edit():
+        return jsonify({'error': 'Edit privileges required'}), 403
+    
+    data = request.json
+    host_name = data.get('host_name')
+    node_type = data.get('node_type', 'datagram')
+    container_name = data.get('container_name')
+    license_key = data.get('license_key')
+    email = data.get('email')
+    password = data.get('password')
+    node_name = data.get('node_name')
+    expiration_date = data.get('expiration_date')
+    
+    if not host_name:
+        return jsonify({'error': 'Host name is required'}), 400
+    
+    if node_type not in NODE_TYPES:
+        return jsonify({'error': f'Invalid node type: {node_type}'}), 400
+    
+    node_config = NODE_TYPES[node_type]
+    
+    if node_config['auth_type'] == 'api_key':
+        if not license_key:
+            return jsonify({'error': 'License key is required for this node type'}), 400
+        if len(license_key) != 32 or not re.match(r'^[0-9a-z]{32}$', license_key):
+            return jsonify({'error': 'Invalid license key format'}), 400
+    else:
+        if not email:
+            return jsonify({'error': 'Email is required for this node type'}), 400
+        if not password:
+            return jsonify({'error': 'Password is required for this node type'}), 400
+    
+    try:
+        cred_id = credentials_db.add_credential(
+            host_name=host_name,
+            node_type=node_type,
+            container_name=container_name,
+            license_key=license_key,
+            email=email,
+            password=password,
+            node_name=node_name,
+            expiration_date=expiration_date
+        )
+        return jsonify({'success': True, 'id': cred_id})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/credentials/<int:credential_id>', methods=['DELETE'])
+@login_required
+def delete_credential(credential_id):
+    """Delete a credential from the database - requires edit permission"""
+    if not current_user.can_edit():
+        return jsonify({'error': 'Edit privileges required'}), 403
+    
+    if credentials_db.delete_credential(credential_id):
+        return jsonify({'success': True})
+    return jsonify({'error': 'Credential not found'}), 404
+
+
+@app.route('/api/credentials/sync', methods=['POST'])
+@login_required
+def sync_credentials():
+    """Sync credentials from running containers to the database - requires edit permission"""
+    if not current_user.can_edit():
+        return jsonify({'error': 'Edit privileges required'}), 403
+    
+    synced = 0
+    errors = []
+    
+    for host in host_manager.hosts:
+        client = host_manager.get_client(host['id'])
+        if not client:
+            errors.append(f"Could not connect to host: {host['name']}")
+            continue
+        
+        try:
+            containers = client.containers.list(all=True)
+            for container in containers:
+                env_vars = container.attrs.get('Config', {}).get('Env', [])
+                license_key = None
+                expiration_date = None
+                node_type = None
+                node_email = None
+                node_password = None
+                node_name = None
+                
+                for env in env_vars:
+                    if env.startswith('LICENSE_KEY='):
+                        license_key = env.split('=', 1)[1]
+                    elif env.startswith('EXPIRATION_DATE='):
+                        expiration_date = env.split('=', 1)[1]
+                    elif env.startswith('NODE_TYPE='):
+                        node_type = env.split('=', 1)[1]
+                    elif env.startswith('NODE_EMAIL='):
+                        node_email = env.split('=', 1)[1]
+                    elif env.startswith('NODE_PASSWORD='):
+                        node_password = env.split('=', 1)[1]
+                    elif env.startswith('NODE_NAME='):
+                        node_name = env.split('=', 1)[1]
+                
+                # Only sync containers with credentials
+                if license_key or node_email:
+                    credentials_db.add_credential(
+                        host_name=host['name'],
+                        node_type=node_type or 'datagram',
+                        container_name=container.name,
+                        license_key=license_key,
+                        email=node_email,
+                        password=node_password,
+                        node_name=node_name,
+                        expiration_date=expiration_date
+                    )
+                    synced += 1
+        except Exception as e:
+            errors.append(f"Error syncing from {host['name']}: {str(e)}")
+    
+    return jsonify({
+        'success': True,
+        'synced': synced,
+        'errors': errors if errors else None
+    })
+
+
+@app.route('/api/credentials/start-all', methods=['POST'])
+@login_required
+def start_all_from_credentials():
+    """Start containers for all credentials in the database - requires edit permission"""
+    if not current_user.can_edit():
+        return jsonify({'error': 'Edit privileges required'}), 403
+    
+    credentials = credentials_db.get_all_credentials()
+    results = {
+        'started': [],
+        'skipped': [],
+        'failed': []
+    }
+    
+    for cred in credentials:
+        host_name = cred['host_name']
+        node_type = cred['node_type']
+        license_key = cred.get('license_key')
+        email = cred.get('email')
+        password = cred.get('password')
+        node_name = cred.get('node_name')
+        expiration_date = cred.get('expiration_date')
+        container_name = cred.get('container_name')
+        
+        if node_type not in NODE_TYPES:
+            results['failed'].append({
+                'identifier': license_key or email,
+                'error': f'Invalid node type: {node_type}'
+            })
+            continue
+        
+        node_config = NODE_TYPES[node_type]
+        
+        # Find host
+        host = None
+        for h in host_manager.hosts:
+            if h['name'] == host_name:
+                host = h
+                break
+        
+        if not host:
+            results['failed'].append({
+                'identifier': license_key or email,
+                'error': f'Host "{host_name}" not found'
+            })
+            continue
+        
+        client = host_manager.get_client(host['id'])
+        if not client:
+            results['failed'].append({
+                'identifier': license_key or email,
+                'error': f'Could not connect to host "{host_name}"'
+            })
+            continue
+        
+        # Check if container already exists
+        exists = False
+        try:
+            containers = client.containers.list(all=True)
+            for c in containers:
+                env_vars = c.attrs.get('Config', {}).get('Env', [])
+                for env in env_vars:
+                    if node_config['auth_type'] == 'api_key':
+                        if env.startswith('LICENSE_KEY=') and env.split('=', 1)[1] == license_key:
+                            exists = True
+                            # Start the container if it's stopped
+                            if c.status != 'running':
+                                c.start()
+                                results['started'].append({
+                                    'identifier': license_key,
+                                    'container_id': c.id[:12],
+                                    'action': 'started existing'
+                                })
+                            else:
+                                results['skipped'].append({
+                                    'identifier': license_key,
+                                    'reason': 'Already running'
+                                })
+                            break
+                    else:
+                        if env.startswith('NODE_EMAIL=') and env.split('=', 1)[1] == email:
+                            exists = True
+                            if c.status != 'running':
+                                c.start()
+                                results['started'].append({
+                                    'identifier': email,
+                                    'container_id': c.id[:12],
+                                    'action': 'started existing'
+                                })
+                            else:
+                                results['skipped'].append({
+                                    'identifier': email,
+                                    'reason': 'Already running'
+                                })
+                            break
+                if exists:
+                    break
+        except Exception as e:
+            results['failed'].append({
+                'identifier': license_key or email,
+                'error': str(e)
+            })
+            continue
+        
+        if exists:
+            continue
+        
+        # Check if image exists
+        image_name = node_config['image']
+        try:
+            client.images.get(image_name)
+        except docker.errors.ImageNotFound:
+            results['failed'].append({
+                'identifier': license_key or email,
+                'error': f'Image "{image_name}" not found'
+            })
+            continue
+        
+        # Prepare environment variables
+        env_vars = {'NODE_TYPE': node_type}
+        
+        if node_config['auth_type'] == 'api_key':
+            env_vars['LICENSE_KEY'] = license_key
+            if not container_name:
+                container_name = license_key
+        else:
+            env_vars['NODE_EMAIL'] = email
+            env_vars['NODE_PASSWORD'] = password
+            if 'NODE_NAME' in node_config['env_vars'] and node_name:
+                env_vars['NODE_NAME'] = node_name
+            
+            if not container_name:
+                email_prefix = email.split('@')[0][:16]
+                email_prefix = re.sub(r'[^a-zA-Z0-9]', '-', email_prefix).lower()
+                email_prefix = re.sub(r'-+', '-', email_prefix).strip('-')
+                container_name = f'{node_type}-{email_prefix}'
+        
+        container_name = re.sub(r'[^a-zA-Z0-9_.-]', '-', container_name)
+        container_name = re.sub(r'-+', '-', container_name).strip('-')
+        
+        if expiration_date and expiration_date != 'N/A':
+            env_vars['EXPIRATION_DATE'] = expiration_date
+        
+        try:
+            container = client.containers.run(
+                image_name,
+                name=container_name,
+                environment=env_vars,
+                platform='linux/amd64',
+                detach=True,
+                restart_policy={'Name': 'unless-stopped'},
+                mem_limit='100m',
+                memswap_limit='200m'
+            )
+            
+            results['started'].append({
+                'identifier': license_key or email,
+                'container_id': container.id[:12],
+                'action': 'created new'
+            })
+        except Exception as e:
+            results['failed'].append({
+                'identifier': license_key or email,
+                'error': str(e)
+            })
+    
+    return jsonify({
+        'success': True,
+        'summary': {
+            'started': len(results['started']),
+            'skipped': len(results['skipped']),
+            'failed': len(results['failed'])
+        },
+        'details': results
+    })
+
+
 @app.route('/')
 @login_required
 def index():
@@ -1071,13 +1532,13 @@ def update_container_expiration(host_id, container_id):
 @app.route('/api/containers/export-keys', methods=['GET'])
 @login_required
 def export_keys():
-    """Export all container keys to CSV - requires view permission"""
+    """Export all container credentials to CSV - requires view permission"""
     if not current_user.can_view():
         return jsonify({'error': 'View privileges required'}), 403
     
     try:
-        # Collect all keys from all hosts
-        all_keys = []
+        # Collect all credentials from all hosts
+        all_credentials = []
         
         for host in host_manager.hosts:
             client = host_manager.get_client(host['id'])
@@ -1090,36 +1551,63 @@ def export_keys():
                     env_vars = container.attrs.get('Config', {}).get('Env', [])
                     license_key = None
                     expiration_date = None
+                    node_type = None
+                    node_email = None
+                    node_password = None
+                    node_name = None
                     
                     for env in env_vars:
                         if env.startswith('LICENSE_KEY='):
                             license_key = env.split('=', 1)[1]
                         elif env.startswith('EXPIRATION_DATE='):
                             expiration_date = env.split('=', 1)[1]
+                        elif env.startswith('NODE_TYPE='):
+                            node_type = env.split('=', 1)[1]
+                        elif env.startswith('NODE_EMAIL='):
+                            node_email = env.split('=', 1)[1]
+                        elif env.startswith('NODE_PASSWORD='):
+                            node_password = env.split('=', 1)[1]
+                        elif env.startswith('NODE_NAME='):
+                            node_name = env.split('=', 1)[1]
                     
-                    if license_key:
-                        all_keys.append({
+                    # Only export containers with credentials
+                    if license_key or node_email:
+                        all_credentials.append({
                             'host': host['name'],
                             'container': container.name,
-                            'key': license_key,
+                            'node_type': node_type or 'datagram',
+                            'key': license_key or '',
+                            'email': node_email or '',
+                            'password': node_password or '',
+                            'node_name': node_name or '',
                             'status': container.status,
                             'expiration': expiration_date or 'N/A'
                         })
             except Exception as e:
-                print(f"Error getting keys from host {host['name']}: {e}")
+                print(f"Error getting credentials from host {host['name']}: {e}")
         
-        # Create CSV
+        # Create CSV with new format supporting all node types
         output = StringIO()
         writer = csv.writer(output)
-        writer.writerow(['Host', 'Container', 'Key', 'Status', 'Expiration'])
+        writer.writerow(['Host', 'Container', 'NodeType', 'Key', 'Email', 'Password', 'NodeName', 'Status', 'Expiration'])
         
-        for item in all_keys:
-            writer.writerow([item['host'], item['container'], item['key'], item['status'], item['expiration']])
+        for item in all_credentials:
+            writer.writerow([
+                item['host'], 
+                item['container'], 
+                item['node_type'],
+                item['key'], 
+                item['email'],
+                item['password'],
+                item['node_name'],
+                item['status'], 
+                item['expiration']
+            ])
         
         # Create response
         response = make_response(output.getvalue())
         response.headers['Content-Type'] = 'text/csv'
-        response.headers['Content-Disposition'] = f'attachment; filename=container_keys_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        response.headers['Content-Disposition'] = f'attachment; filename=container_credentials_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
         
         return response
     except Exception as e:
@@ -1129,7 +1617,12 @@ def export_keys():
 @app.route('/api/containers/import-keys', methods=['POST'])
 @login_required
 def import_keys():
-    """Import container keys from CSV - requires edit permission"""
+    """Import container credentials from CSV - requires edit permission
+    
+    Supports two CSV formats:
+    1. New format: Host, Container, NodeType, Key, Email, Password, NodeName, Status, Expiration
+    2. Legacy format: Host, Container, Key, Status, Expiration (for datagram only)
+    """
     if not current_user.can_edit():
         return jsonify({'error': 'Edit privileges required'}), 403
     
@@ -1149,10 +1642,21 @@ def import_keys():
         stream = StringIO(file.stream.read().decode('utf-8'))
         reader = csv.DictReader(stream)
         
-        # Validate headers
-        expected_headers = {'Host', 'Container', 'Key', 'Status', 'Expiration'}
-        if not expected_headers.issubset(set(reader.fieldnames or [])):
-            return jsonify({'error': f'Invalid CSV format. Expected headers: {", ".join(expected_headers)}'}), 400
+        # Detect format based on headers
+        fieldnames = set(reader.fieldnames or [])
+        new_format_headers = {'Host', 'NodeType', 'Key', 'Email', 'Password'}
+        legacy_headers = {'Host', 'Container', 'Key', 'Status', 'Expiration'}
+        
+        is_new_format = 'NodeType' in fieldnames or 'Email' in fieldnames
+        
+        if is_new_format:
+            # New format - check for required headers
+            if 'Host' not in fieldnames:
+                return jsonify({'error': 'CSV must have a "Host" column'}), 400
+        else:
+            # Legacy format - validate old headers
+            if not legacy_headers.issubset(fieldnames):
+                return jsonify({'error': f'Invalid CSV format. Expected headers: {", ".join(legacy_headers)} or new format with NodeType, Email, Password columns'}), 400
         
         # Process each row
         results = {
@@ -1163,25 +1667,68 @@ def import_keys():
         
         for row_num, row in enumerate(reader, start=2):  # Start at 2 (header is row 1)
             host_name = row.get('Host', '').strip()
+            node_type = row.get('NodeType', 'datagram').strip() or 'datagram'
             key = row.get('Key', '').strip()
+            email = row.get('Email', '').strip()
+            password = row.get('Password', '').strip()
+            node_name = row.get('NodeName', '').strip()
             expiration = row.get('Expiration', '').strip()
+            container_name = row.get('Container', '').strip()
             
-            # Validate key
-            if not key:
+            # Validate node type
+            if node_type not in NODE_TYPES:
                 results['failed'].append({
                     'row': row_num,
-                    'key': key,
-                    'error': 'Missing key'
+                    'identifier': key or email or 'unknown',
+                    'error': f'Invalid node type: {node_type}'
                 })
                 continue
             
-            if len(key) != 32 or not re.match(r'^[0-9a-z]{32}$', key):
-                results['failed'].append({
-                    'row': row_num,
-                    'key': key,
-                    'error': 'Invalid key format (must be 32 characters, 0-9 and a-z only)'
-                })
-                continue
+            node_config = NODE_TYPES[node_type]
+            
+            # Validate credentials based on auth type
+            if node_config['auth_type'] == 'api_key':
+                if not key:
+                    results['failed'].append({
+                        'row': row_num,
+                        'identifier': 'missing',
+                        'error': 'Missing key for datagram node'
+                    })
+                    continue
+                
+                if len(key) != 32 or not re.match(r'^[0-9a-z]{32}$', key):
+                    results['failed'].append({
+                        'row': row_num,
+                        'identifier': key,
+                        'error': 'Invalid key format (must be 32 characters, 0-9 and a-z only)'
+                    })
+                    continue
+            else:
+                # Email/password auth
+                if not email:
+                    results['failed'].append({
+                        'row': row_num,
+                        'identifier': 'missing',
+                        'error': f'Missing email for {node_type} node'
+                    })
+                    continue
+                
+                if not password:
+                    results['failed'].append({
+                        'row': row_num,
+                        'identifier': email,
+                        'error': f'Missing password for {node_type} node'
+                    })
+                    continue
+                
+                # Basic email validation
+                if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
+                    results['failed'].append({
+                        'row': row_num,
+                        'identifier': email,
+                        'error': 'Invalid email format'
+                    })
+                    continue
             
             # Find host by name
             host = None
@@ -1193,31 +1740,41 @@ def import_keys():
             if not host:
                 results['failed'].append({
                     'row': row_num,
-                    'key': key,
+                    'identifier': key or email,
                     'error': f'Host "{host_name}" not found'
                 })
                 continue
             
-            # Check if container already exists
+            # Get Docker client
             client = host_manager.get_client(host['id'])
             if not client:
                 results['failed'].append({
                     'row': row_num,
-                    'key': key,
+                    'identifier': key or email,
                     'error': f'Could not connect to host "{host_name}"'
                 })
                 continue
             
-            # Check if container with this key already exists
+            # Check if container with same credentials already exists
             exists = False
             try:
                 containers = client.containers.list(all=True)
                 for c in containers:
                     env_vars = c.attrs.get('Config', {}).get('Env', [])
                     for env in env_vars:
-                        if env.startswith('LICENSE_KEY=') and env.split('=', 1)[1] == key:
-                            exists = True
-                            break
+                        if node_config['auth_type'] == 'api_key':
+                            if env.startswith('LICENSE_KEY=') and env.split('=', 1)[1] == key:
+                                exists = True
+                                break
+                        else:
+                            if env.startswith('NODE_EMAIL=') and env.split('=', 1)[1] == email:
+                                # Check node type too
+                                for env2 in env_vars:
+                                    if env2.startswith('NODE_TYPE=') and env2.split('=', 1)[1] == node_type:
+                                        exists = True
+                                        break
+                                if exists:
+                                    break
                     if exists:
                         break
             except:
@@ -1226,38 +1783,59 @@ def import_keys():
             if exists:
                 results['skipped'].append({
                     'row': row_num,
-                    'key': key,
-                    'reason': 'Container with this key already exists'
+                    'identifier': key or email,
+                    'reason': f'Container with this {"key" if key else "email"} already exists for {node_type}'
                 })
                 continue
             
             # Check if image exists
+            image_name = node_config['image']
             try:
-                client.images.get(DEFAULT_IMAGE)
+                client.images.get(image_name)
             except docker.errors.ImageNotFound:
                 results['failed'].append({
                     'row': row_num,
-                    'key': key,
-                    'error': f'Image "{DEFAULT_IMAGE}" not found on host "{host_name}"'
+                    'identifier': key or email,
+                    'error': f'Image "{image_name}" not found on host "{host_name}"'
                 })
                 continue
             
             # Prepare environment variables
-            env_vars = {'LICENSE_KEY': key}
+            env_vars = {'NODE_TYPE': node_type}
+            
+            if node_config['auth_type'] == 'api_key':
+                env_vars['LICENSE_KEY'] = key
+                if not container_name:
+                    container_name = key
+            else:
+                env_vars['NODE_EMAIL'] = email
+                env_vars['NODE_PASSWORD'] = password
+                if 'NODE_NAME' in node_config['env_vars'] and node_name:
+                    env_vars['NODE_NAME'] = node_name
+                
+                if not container_name:
+                    # Generate container name from email prefix and node type
+                    email_prefix = email.split('@')[0][:16]
+                    email_prefix = re.sub(r'[^a-zA-Z0-9]', '-', email_prefix).lower()
+                    email_prefix = re.sub(r'-+', '-', email_prefix).strip('-')
+                    container_name = f'{node_type}-{email_prefix}'
+            
+            # Sanitize container name
+            container_name = re.sub(r'[^a-zA-Z0-9_.-]', '-', container_name)
+            container_name = re.sub(r'-+', '-', container_name).strip('-')
+            
             if expiration and expiration != 'N/A':
                 try:
-                    # Try to parse the expiration date
-                    exp_dt = datetime.fromisoformat(expiration)
+                    datetime.fromisoformat(expiration.replace('Z', '+00:00'))
                     env_vars['EXPIRATION_DATE'] = expiration
                 except:
-                    # If parsing fails, skip expiration date
-                    pass
+                    pass  # If parsing fails, skip expiration date
             
             # Start the container
             try:
                 container = client.containers.run(
-                    DEFAULT_IMAGE,
-                    name=key,
+                    image_name,
+                    name=container_name,
                     environment=env_vars,
                     platform='linux/amd64',
                     detach=True,
@@ -1268,14 +1846,15 @@ def import_keys():
                 
                 results['success'].append({
                     'row': row_num,
-                    'key': key,
+                    'identifier': key or email,
                     'host': host_name,
+                    'node_type': node_type,
                     'container_id': container.id[:12]
                 })
             except Exception as e:
                 results['failed'].append({
                     'row': row_num,
-                    'key': key,
+                    'identifier': key or email,
                     'error': str(e)
                 })
         
