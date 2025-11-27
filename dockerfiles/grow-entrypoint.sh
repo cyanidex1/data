@@ -31,6 +31,11 @@ fi
 
 # Set node binary path
 node="/home/nodeuser/$chain"
+config_file="/home/nodeuser/.${chain}/config.json"
+
+# Authentication retry settings - exit after 3 failed attempts
+max_auth_attempts=3
+auth_attempt=0
 
 # Infinite loop to handle node crash, redownload and reconfigure
 while true; do
@@ -55,8 +60,9 @@ while true; do
     }
     chmod +x "$node"
 
-    # Auto-fill configuration using expect
-    expect <<EOF
+    # Auto-fill configuration using expect with Firebase error detection
+    config_output=$(mktemp)
+    expect <<EOF > "$config_output" 2>&1 || true
         set timeout 30
         spawn $node config
         expect {
@@ -100,6 +106,33 @@ while true; do
         }
         expect eof
 EOF
+
+    # Check for Firebase authentication errors
+    if grep -qi "firebase\|invalid\|429\|unauthorized\|authentication" "$config_output"; then
+        auth_attempt=$((auth_attempt + 1))
+        echo "[!] Authentication error detected (attempt $auth_attempt/$max_auth_attempts)"
+        cat "$config_output"
+        rm -f "$config_output"
+        
+        if [ $auth_attempt -ge $max_auth_attempts ]; then
+            echo "[!] ============================================"
+            echo "[!] AUTHENTICATION ERROR: Max attempts reached ($max_auth_attempts)"
+            echo "[!] Please verify your credentials and try again."
+            echo "[!] Email: $NODE_EMAIL"
+            echo "[!] ============================================"
+            exit 1
+        fi
+        
+        # Remove config and binary to force fresh re-authentication
+        rm -f "$config_file" "$node"
+        echo "[*] Restarting authentication (attempt $((auth_attempt + 1))/$max_auth_attempts) in 10 seconds..."
+        sleep 10
+        continue
+    fi
+    
+    rm -f "$config_output"
+    # Reset auth attempt count on success
+    auth_attempt=0
 
     echo "[*] Grow configuration complete!"
 
