@@ -32,6 +32,74 @@ HOSTS_FILE = os.path.join(DATA_DIR, 'docker_hosts.json')
 USERS_FILE = os.path.join(DATA_DIR, 'users.json')
 DEFAULT_IMAGE = 'datagram'
 
+# Node type configurations
+NODE_TYPES = {
+    'datagram': {
+        'name': 'Datagram',
+        'description': 'Datagram CLI node using API key',
+        'image': 'datagram',
+        'auth_type': 'api_key',  # Uses LICENSE_KEY
+        'dockerfile': 'datagram.Dockerfile',
+        'env_vars': ['LICENSE_KEY']
+    },
+    'element': {
+        'name': 'Element',
+        'description': 'Element United node',
+        'image': 'element-node',
+        'auth_type': 'email_password',  # Uses email/password
+        'dockerfile': 'element.Dockerfile',
+        'env_vars': ['NODE_EMAIL', 'NODE_PASSWORD', 'NODE_NAME']
+    },
+    'elevate': {
+        'name': 'Elevate',
+        'description': 'Elevate United node',
+        'image': 'elevate-node',
+        'auth_type': 'email_password',
+        'dockerfile': 'elevate.Dockerfile',
+        'env_vars': ['NODE_EMAIL', 'NODE_PASSWORD', 'NODE_NAME']
+    },
+    'grow': {
+        'name': 'Grow',
+        'description': 'Grow Blockchain node',
+        'image': 'grow-node',
+        'auth_type': 'email_password',
+        'dockerfile': 'grow.Dockerfile',
+        'env_vars': ['NODE_EMAIL', 'NODE_PASSWORD', 'NODE_NAME']
+    },
+    'revo': {
+        'name': 'Revo',
+        'description': 'RevoRide node',
+        'image': 'revo-node',
+        'auth_type': 'email_password',
+        'dockerfile': 'revo.Dockerfile',
+        'env_vars': ['NODE_EMAIL', 'NODE_PASSWORD', 'NODE_NAME']
+    },
+    'rlink': {
+        'name': 'RLink',
+        'description': 'RLink Rally node',
+        'image': 'rlink-node',
+        'auth_type': 'email_password',
+        'dockerfile': 'rlink.Dockerfile',
+        'env_vars': ['NODE_EMAIL', 'NODE_PASSWORD', 'NODE_NAME']
+    },
+    'switch': {
+        'name': 'Switch',
+        'description': 'Switch Reward Card node',
+        'image': 'switch-node',
+        'auth_type': 'email_password',
+        'dockerfile': 'switch.Dockerfile',
+        'env_vars': ['NODE_EMAIL', 'NODE_PASSWORD', 'NODE_NAME']
+    },
+    'win': {
+        'name': 'Win',
+        'description': 'Win node',
+        'image': 'win-node',
+        'auth_type': 'email_password',
+        'dockerfile': 'win.Dockerfile',
+        'env_vars': ['NODE_EMAIL', 'NODE_PASSWORD']
+    }
+}
+
 
 def is_expired(expiration_date_str):
     """
@@ -531,6 +599,27 @@ def update_theme():
     return jsonify({'error': 'Failed to update theme'}), 500
 
 
+@app.route('/api/node-types', methods=['GET'])
+@login_required
+def get_node_types():
+    """Get available node types configuration"""
+    if not current_user.can_view():
+        return jsonify({'error': 'View privileges required'}), 403
+    
+    # Return node types with their metadata (without internal details)
+    node_types_info = {
+        key: {
+            'name': config['name'],
+            'description': config['description'],
+            'auth_type': config['auth_type'],
+            'image': config['image']
+        }
+        for key, config in NODE_TYPES.items()
+    }
+    
+    return jsonify({'node_types': node_types_info})
+
+
 @app.route('/')
 @login_required
 def index():
@@ -623,15 +712,22 @@ def list_containers():
         try:
             containers = client.containers.list(all=True)
             for container in containers:
-                # Get environment variables to extract the key
+                # Get environment variables to extract credentials
                 env_vars = container.attrs.get('Config', {}).get('Env', [])
                 license_key = None
                 expiration_date = None
+                node_type = None
+                node_email = None
+                
                 for env in env_vars:
                     if env.startswith('LICENSE_KEY='):
                         license_key = env.split('=', 1)[1]
                     elif env.startswith('EXPIRATION_DATE='):
                         expiration_date = env.split('=', 1)[1]
+                    elif env.startswith('NODE_TYPE='):
+                        node_type = env.split('=', 1)[1]
+                    elif env.startswith('NODE_EMAIL='):
+                        node_email = env.split('=', 1)[1]
                 
                 # Determine container status
                 status = container.status
@@ -647,6 +743,8 @@ def list_containers():
                     'image': container.image.tags[0] if container.image.tags else container.image.id[:12],
                     'created': container.attrs['Created'],
                     'key': license_key,
+                    'email': node_email,
+                    'node_type': node_type,
                     'expiration_date': expiration_date
                 })
         except Exception as e:
@@ -658,21 +756,21 @@ def list_containers():
 @app.route('/api/containers/start', methods=['POST'])
 @login_required
 def start_container():
-    """Start a new container with a given key - requires edit permission"""
+    """Start a new container - requires edit permission"""
     if not current_user.can_edit():
         return jsonify({'error': 'Edit privileges required'}), 403
     
     data = request.json
     host_id = data.get('host_id')
-    key = data.get('key')
-    expiration_date = data.get('expiration_date')  # Optional expiration date
+    node_type = data.get('node_type', 'datagram')
+    expiration_date = data.get('expiration_date')
+    container_name = data.get('container_name')
     
-    # Validate key format: 32 characters, only 0-9 and a-z
-    if not key or len(key) != 32:
-        return jsonify({'error': 'Invalid key. Must be exactly 32 characters'}), 400
+    # Validate node type
+    if node_type not in NODE_TYPES:
+        return jsonify({'error': f'Invalid node type: {node_type}'}), 400
     
-    if not re.match(r'^[0-9a-z]{32}$', key):
-        return jsonify({'error': 'Invalid key. Must contain only numbers (0-9) and lowercase letters (a-z)'}), 400
+    node_config = NODE_TYPES[node_type]
     
     if host_id is None:
         return jsonify({'error': 'Host ID is required'}), 400
@@ -681,43 +779,78 @@ def start_container():
     if not client:
         return jsonify({'error': 'Could not connect to Docker host'}), 500
     
-    try:
-        # Use the key as the container name
-        container_name = key
+    # Prepare environment variables based on auth type
+    env_vars = {}
+    
+    if node_config['auth_type'] == 'api_key':
+        # Datagram uses LICENSE_KEY
+        key = data.get('key')
+        if not key or len(key) != 32:
+            return jsonify({'error': 'Invalid key. Must be exactly 32 characters'}), 400
+        if not re.match(r'^[0-9a-z]{32}$', key):
+            return jsonify({'error': 'Invalid key. Must contain only numbers (0-9) and lowercase letters (a-z)'}), 400
+        env_vars['LICENSE_KEY'] = key
+        if not container_name:
+            container_name = key
+    else:
+        # Email/password authentication
+        email = data.get('email')
+        password = data.get('password')
+        node_name = data.get('node_name', f'{node_type}-node')
         
-        # Check if container with this key already exists across all hosts
-        for host in host_manager.hosts:
-            check_client = host_manager.get_client(host['id'])
-            if check_client:
-                try:
-                    existing_containers = check_client.containers.list(all=True)
-                    for c in existing_containers:
-                        env_vars = c.attrs.get('Config', {}).get('Env', [])
-                        for env in env_vars:
-                            if env.startswith('LICENSE_KEY=') and env.split('=', 1)[1] == key:
-                                return jsonify({'error': f'Container with key "{key}" already exists on host "{host["name"]}"'}), 400
-                except:
-                    pass
+        if not email:
+            return jsonify({'error': 'Email is required'}), 400
+        if not password:
+            return jsonify({'error': 'Password is required'}), 400
         
-        # Check if image exists, if not return error (user should build it on the host)
+        # Basic email validation
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
+            return jsonify({'error': 'Invalid email format'}), 400
+        
+        env_vars['NODE_EMAIL'] = email
+        env_vars['NODE_PASSWORD'] = password
+        if 'NODE_NAME' in node_config['env_vars']:
+            env_vars['NODE_NAME'] = node_name
+        
+        if not container_name:
+            # Generate container name from email prefix and node type
+            email_prefix = email.split('@')[0][:16]
+            # Sanitize: only allow alphanumeric and hyphens
+            email_prefix = re.sub(r'[^a-zA-Z0-9]', '-', email_prefix).lower()
+            container_name = f'{node_type}-{email_prefix}'
+    
+    # Sanitize container name
+    container_name = re.sub(r'[^a-zA-Z0-9_.-]', '-', container_name)
+    
+    # Add expiration date if provided
+    if expiration_date:
         try:
-            client.images.get(DEFAULT_IMAGE)
-        except docker.errors.ImageNotFound:
-            return jsonify({'error': f'Image "{DEFAULT_IMAGE}" not found on host. Please build it first.'}), 400
+            datetime.fromisoformat(expiration_date.replace('Z', '+00:00'))
+            env_vars['EXPIRATION_DATE'] = expiration_date
+        except (ValueError, AttributeError):
+            return jsonify({'error': 'Invalid expiration date format. Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)'}), 400
+    
+    # Store node type for identification
+    env_vars['NODE_TYPE'] = node_type
+    
+    try:
+        # Check if container with this name already exists
+        try:
+            existing = client.containers.get(container_name)
+            return jsonify({'error': f'Container with name "{container_name}" already exists'}), 400
+        except docker.errors.NotFound:
+            pass
         
-        # Prepare environment variables
-        env_vars = {'LICENSE_KEY': key}
-        if expiration_date:
-            # Validate and store expiration date
-            try:
-                exp_dt = datetime.fromisoformat(expiration_date)
-                env_vars['EXPIRATION_DATE'] = expiration_date
-            except:
-                return jsonify({'error': 'Invalid expiration date format. Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)'}), 400
+        # Check if image exists
+        image_name = node_config['image']
+        try:
+            client.images.get(image_name)
+        except docker.errors.ImageNotFound:
+            return jsonify({'error': f'Image "{image_name}" not found on host. Please build it first.'}), 400
         
         # Start the container
         container = client.containers.run(
-            DEFAULT_IMAGE,
+            image_name,
             name=container_name,
             environment=env_vars,
             platform='linux/amd64',
@@ -730,7 +863,8 @@ def start_container():
         return jsonify({
             'success': True,
             'container_id': container.id[:12],
-            'container_name': container_name
+            'container_name': container_name,
+            'node_type': node_type
         })
     
     except Exception as e:

@@ -181,6 +181,15 @@
         .status-expired { background: var(--status-expired-bg); color: var(--warning-color); }
         .status-created { background: var(--status-created-bg); color: var(--primary-color); }
         
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 500;
+            text-transform: capitalize;
+        }
+        
         .actions { display: flex; gap: 4px; flex-wrap: wrap; }
         
         .empty-state {
@@ -449,10 +458,40 @@
                         </select>
                     </div>
                     <div class="form-group">
-                        <label for="key-input">Datagram Key (32 characters, 0-9 and a-z only)</label>
-                        <input type="text" id="key-input" placeholder="Enter 32-character key" maxlength="32" pattern="[0-9a-z]{32}" required>
-                        <div class="help-text">The key will be used as the container name. Only lowercase letters and numbers allowed.</div>
+                        <label for="node-type-select">Node Type</label>
+                        <select id="node-type-select" required onchange="updateCredentialFields()">
+                            <option value="">Select a node type...</option>
+                            <!-- Node types loaded dynamically -->
+                        </select>
+                        <div class="help-text" id="node-type-description"></div>
                     </div>
+                    
+                    <!-- Datagram (API Key) credentials -->
+                    <div id="api-key-fields" style="display: none;">
+                        <div class="form-group">
+                            <label for="key-input">Datagram Key (32 characters, 0-9 and a-z only)</label>
+                            <input type="text" id="key-input" placeholder="Enter 32-character key" maxlength="32" pattern="[0-9a-z]{32}">
+                            <div class="help-text">The key will be used as the container name. Only lowercase letters and numbers allowed.</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Email/Password credentials -->
+                    <div id="email-password-fields" style="display: none;">
+                        <div class="form-group">
+                            <label for="email-input">Email</label>
+                            <input type="email" id="email-input" placeholder="Enter email address">
+                        </div>
+                        <div class="form-group">
+                            <label for="password-input">Password</label>
+                            <input type="password" id="password-input" placeholder="Enter password">
+                        </div>
+                        <div class="form-group">
+                            <label for="node-name-input">Node Name (Optional)</label>
+                            <input type="text" id="node-name-input" placeholder="Custom node name (optional)">
+                            <div class="help-text">Leave empty for auto-generated name</div>
+                        </div>
+                    </div>
+                    
                     <div class="form-group">
                         <label for="expiration-input">Expiration Date (Optional)</label>
                         <input type="datetime-local" id="expiration-input">
@@ -562,10 +601,12 @@
     <script>
         let refreshInterval;
         let allContainers = []; // Store all containers for filtering
+        let nodeTypes = {}; // Store node types configuration
         const canEdit = {{ 'true' if can_edit else 'false' }};
         
         document.addEventListener('DOMContentLoaded', function() {
             loadHosts();
+            loadNodeTypes();
             refreshContainers();
             refreshInterval = setInterval(refreshContainers, 10000);
             
@@ -620,6 +661,70 @@
             alert.textContent = message;
             alertsDiv.appendChild(alert);
             setTimeout(() => alert.remove(), 5000);
+        }
+        
+        async function loadNodeTypes() {
+            if (!canEdit) return;
+            
+            try {
+                const response = await fetch('/api/node-types');
+                if (response.ok) {
+                    const data = await response.json();
+                    nodeTypes = data.node_types;
+                    
+                    const nodeTypeSelect = document.getElementById('node-type-select');
+                    if (nodeTypeSelect) {
+                        nodeTypeSelect.innerHTML = '<option value="">Select a node type...</option>';
+                        
+                        for (const [key, config] of Object.entries(nodeTypes)) {
+                            const option = document.createElement('option');
+                            option.value = key;
+                            option.textContent = config.name;
+                            option.dataset.description = config.description;
+                            option.dataset.authType = config.auth_type;
+                            nodeTypeSelect.appendChild(option);
+                        }
+                        
+                        // Default to datagram
+                        nodeTypeSelect.value = 'datagram';
+                        updateCredentialFields();
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading node types:', error);
+            }
+        }
+        
+        function updateCredentialFields() {
+            const nodeTypeSelect = document.getElementById('node-type-select');
+            const selectedType = nodeTypeSelect.value;
+            const apiKeyFields = document.getElementById('api-key-fields');
+            const emailPasswordFields = document.getElementById('email-password-fields');
+            const descriptionDiv = document.getElementById('node-type-description');
+            
+            if (!selectedType || !nodeTypes[selectedType]) {
+                apiKeyFields.style.display = 'none';
+                emailPasswordFields.style.display = 'none';
+                descriptionDiv.textContent = '';
+                return;
+            }
+            
+            const config = nodeTypes[selectedType];
+            descriptionDiv.textContent = config.description;
+            
+            if (config.auth_type === 'api_key') {
+                apiKeyFields.style.display = 'block';
+                emailPasswordFields.style.display = 'none';
+                document.getElementById('key-input').required = true;
+                document.getElementById('email-input').required = false;
+                document.getElementById('password-input').required = false;
+            } else {
+                apiKeyFields.style.display = 'none';
+                emailPasswordFields.style.display = 'block';
+                document.getElementById('key-input').required = false;
+                document.getElementById('email-input').required = true;
+                document.getElementById('password-input').required = true;
+            }
         }
         
         async function loadHosts() {
@@ -741,9 +846,9 @@
                             <tr>
                                 <th>Host</th>
                                 <th>Name</th>
+                                <th>Type</th>
                                 <th>Status</th>
-                                <th>Image</th>
-                                <th>Key</th>
+                                <th>Key/Email</th>
                                 <th>Expiration</th>
                                 <th>Actions</th>
                             </tr>
@@ -753,9 +858,9 @@
                                 <tr>
                                     <td>${c.host_name}</td>
                                     <td><code>${c.name}</code></td>
+                                    <td><span class="badge" style="background: var(--status-created-bg); color: var(--primary-color);">${c.node_type || 'datagram'}</span></td>
                                     <td><span class="status status-${c.status}">${c.status}</span></td>
-                                    <td style="font-size: 12px; color: #8b949e;">${c.image}</td>
-                                    <td><code>${c.key || 'N/A'}</code></td>
+                                    <td><code>${c.key || c.email || 'N/A'}</code></td>
                                     <td style="font-size: 12px; color: #8b949e;">${c.expiration_date ? new Date(c.expiration_date).toLocaleString() : 'Never'}</td>
                                     <td>
                                         <div class="actions">
@@ -791,7 +896,9 @@
                     c.name,
                     c.status,
                     c.image,
+                    c.node_type || '',
                     c.key || '',
+                    c.email || '',
                     c.expiration_date ? new Date(c.expiration_date).toLocaleString() : 'Never'
                 ].join(' ').toLowerCase();
                 
@@ -803,7 +910,7 @@
         
         async function startContainer() {
             const hostId = document.getElementById('host-select').value;
-            const key = document.getElementById('key-input').value;
+            const nodeType = document.getElementById('node-type-select').value;
             const expirationDate = document.getElementById('expiration-input').value;
             
             if (!hostId) {
@@ -811,22 +918,56 @@
                 return;
             }
             
-            if (key.length !== 32) {
-                showAlert('Key must be exactly 32 characters', 'error');
+            if (!nodeType) {
+                showAlert('Please select a node type', 'error');
                 return;
             }
             
-            // Validate key format: only 0-9 and a-z
-            if (!/^[0-9a-z]{32}$/.test(key)) {
-                showAlert('Key must contain only numbers (0-9) and lowercase letters (a-z)', 'error');
-                return;
-            }
-            
-            const payload = { host_id: parseInt(hostId), key: key };
+            const config = nodeTypes[nodeType];
+            const payload = { 
+                host_id: parseInt(hostId), 
+                node_type: nodeType 
+            };
             
             // Add expiration date if provided
             if (expirationDate) {
                 payload.expiration_date = new Date(expirationDate).toISOString();
+            }
+            
+            if (config.auth_type === 'api_key') {
+                const key = document.getElementById('key-input').value;
+                
+                if (key.length !== 32) {
+                    showAlert('Key must be exactly 32 characters', 'error');
+                    return;
+                }
+                
+                if (!/^[0-9a-z]{32}$/.test(key)) {
+                    showAlert('Key must contain only numbers (0-9) and lowercase letters (a-z)', 'error');
+                    return;
+                }
+                
+                payload.key = key;
+            } else {
+                const email = document.getElementById('email-input').value;
+                const password = document.getElementById('password-input').value;
+                const nodeName = document.getElementById('node-name-input').value;
+                
+                if (!email) {
+                    showAlert('Email is required', 'error');
+                    return;
+                }
+                
+                if (!password) {
+                    showAlert('Password is required', 'error');
+                    return;
+                }
+                
+                payload.email = email;
+                payload.password = password;
+                if (nodeName) {
+                    payload.node_name = nodeName;
+                }
             }
             
             try {
@@ -839,8 +980,12 @@
                 const data = await response.json();
                 
                 if (response.ok) {
-                    showAlert('Container started successfully with key: ' + key, 'success');
+                    showAlert(`Container started successfully: ${data.container_name}`, 'success');
+                    // Clear form fields
                     document.getElementById('key-input').value = '';
+                    document.getElementById('email-input').value = '';
+                    document.getElementById('password-input').value = '';
+                    document.getElementById('node-name-input').value = '';
                     document.getElementById('expiration-input').value = '';
                     refreshContainers();
                 } else {
