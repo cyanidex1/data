@@ -30,7 +30,7 @@ if [ "$arch" = "arm64" ]; then
 fi
 
 # Set node binary path
-node="/usr/local/bin/$chain"
+node="/home/nodeuser/$chain"
 
 # Infinite loop to handle node crash, redownload and reconfigure
 while true; do
