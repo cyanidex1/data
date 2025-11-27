@@ -190,6 +190,11 @@
             text-transform: capitalize;
         }
         
+        .badge-node-type {
+            background: var(--status-created-bg);
+            color: var(--primary-color);
+        }
+        
         .actions { display: flex; gap: 4px; flex-wrap: wrap; }
         
         .empty-state {
@@ -863,7 +868,7 @@
                                 <tr>
                                     <td>${c.host_name}</td>
                                     <td><code>${c.name}</code></td>
-                                    <td><span class="badge" style="background: var(--status-created-bg); color: var(--primary-color);">${c.node_type || 'datagram'}</span></td>
+                                    <td><span class="badge badge-node-type">${c.node_type || 'datagram'}</span></td>
                                     <td><span class="status status-${c.status}">${c.status}</span></td>
                                     <td><code>${c.key || c.email || 'N/A'}</code></td>
                                     <td style="font-size: 12px; color: #8b949e;">${c.expiration_date ? new Date(c.expiration_date).toLocaleString() : 'Never'}</td>
