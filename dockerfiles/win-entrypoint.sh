@@ -25,7 +25,7 @@ brand_name="$brand-node"
 domain="static.connectblockchain.net"
 date=$(date +%s)
 download_url="https://$domain/go-node/$env/${brand_name}_linux-amd64?$date"
-node="/usr/local/bin/$brand_name"
+node="/home/nodeuser/$brand_name"
 
 echo "[*] brand=$brand"
 echo "[*] download_url=$download_url"
