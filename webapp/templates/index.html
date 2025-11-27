@@ -685,8 +685,13 @@
                             nodeTypeSelect.appendChild(option);
                         }
                         
-                        // Default to datagram
-                        nodeTypeSelect.value = 'datagram';
+                        // Default to first available node type (datagram if available)
+                        const nodeTypeKeys = Object.keys(nodeTypes);
+                        if (nodeTypeKeys.includes('datagram')) {
+                            nodeTypeSelect.value = 'datagram';
+                        } else if (nodeTypeKeys.length > 0) {
+                            nodeTypeSelect.value = nodeTypeKeys[0];
+                        }
                         updateCredentialFields();
                     }
                 }

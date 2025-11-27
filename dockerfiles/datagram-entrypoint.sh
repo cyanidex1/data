@@ -1,4 +1,5 @@
 #!/bin/sh
+set -e
 
 echo "[*] Starting Datagram container..."
 
@@ -7,5 +8,5 @@ if [ -z "$LICENSE_KEY" ]; then
   exit 1
 fi
 
-echo "[*] Running datagram with key: $LICENSE_KEY"
+echo "[*] Running datagram with provided key"
 /usr/local/bin/datagram run -- -key "$LICENSE_KEY"

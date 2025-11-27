@@ -817,10 +817,13 @@ def start_container():
             email_prefix = email.split('@')[0][:16]
             # Sanitize: only allow alphanumeric and hyphens
             email_prefix = re.sub(r'[^a-zA-Z0-9]', '-', email_prefix).lower()
+            # Remove consecutive hyphens
+            email_prefix = re.sub(r'-+', '-', email_prefix).strip('-')
             container_name = f'{node_type}-{email_prefix}'
     
-    # Sanitize container name
+    # Sanitize container name and remove consecutive hyphens
     container_name = re.sub(r'[^a-zA-Z0-9_.-]', '-', container_name)
+    container_name = re.sub(r'-+', '-', container_name).strip('-')
     
     # Add expiration date if provided
     if expiration_date:
