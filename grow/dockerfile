@@ -1,0 +1,22 @@
+# Use the official Ubuntu image
+FROM ubuntu:latest
+
+# Install necessary packages
+RUN apt-get update && \
+    apt-get install -y \
+        wget \
+        expect \
+        curl \
+        ca-certificates \
+        bash \
+        && apt-get clean \
+        && rm -rf /var/lib/apt/lists/*
+
+# Add the shell script to the container
+ADD grow.sh /usr/local/bin/grow.sh
+
+# Make the script executable
+RUN chmod +x /usr/local/bin/grow.sh
+
+# Set the entry point to run the script
+ENTRYPOINT ["/usr/local/bin/grow.sh"]

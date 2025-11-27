@@ -1,0 +1,22 @@
+# Use the official Ubuntu image
+FROM ubuntu:latest
+
+# Install necessary packages
+RUN apt-get update && \
+    apt-get install -y \
+        wget \
+        expect \
+        curl \
+        ca-certificates \
+        bash \
+        && apt-get clean \
+        && rm -rf /var/lib/apt/lists/*
+
+# Add the shell script to the container
+ADD element.sh /usr/local/bin/element.sh
+
+# Make the script executable
+RUN chmod +x /usr/local/bin/element.sh
+
+# Set the entry point to run the script
+ENTRYPOINT ["/usr/local/bin/element.sh"]
