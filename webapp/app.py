@@ -1637,31 +1637,24 @@ def import_keys():
             
             # Check if container with same credentials already exists
             # For datagram nodes (api_key type): skip if any container with same key exists
-            # For non-datagram nodes: skip if any running container with same email and node_type exists
+            # For non-datagram nodes: skip if container with same name from CSV already exists
             exists = False
             existing_container_name = None
             try:
                 containers = client.containers.list(all=True)
                 for c in containers:
-                    c_env_vars = c.attrs.get('Config', {}).get('Env', [])
                     if node_config['auth_type'] == 'api_key':
                         # Check for matching LICENSE_KEY
+                        c_env_vars = c.attrs.get('Config', {}).get('Env', [])
                         for env in c_env_vars:
                             if env.startswith('LICENSE_KEY=') and env.split('=', 1)[1] == key:
                                 exists = True
                                 existing_container_name = c.name
                                 break
                     else:
-                        # Check for matching NODE_EMAIL and NODE_TYPE (for non-datagram nodes)
-                        c_email = None
-                        c_node_type = None
-                        for env in c_env_vars:
-                            if env.startswith('NODE_EMAIL='):
-                                c_email = env.split('=', 1)[1]
-                            elif env.startswith('NODE_TYPE='):
-                                c_node_type = env.split('=', 1)[1]
-                        # Skip if same email and node_type already exists
-                        if c_email == email and c_node_type == node_type:
+                        # For non-datagram nodes: check if container with same name exists
+                        # Use the container name from CSV if provided
+                        if container_name and c.name == container_name:
                             exists = True
                             existing_container_name = c.name
                             break
@@ -1674,7 +1667,7 @@ def import_keys():
                 results['skipped'].append({
                     'row': row_num,
                     'identifier': key or email,
-                    'reason': f'Container with these credentials already exists ({existing_container_name or "unknown"}) for {node_type}'
+                    'reason': f'Container already exists ({existing_container_name or "unknown"}) for {node_type}'
                 })
                 continue
             
@@ -1709,14 +1702,12 @@ def import_keys():
                     email_prefix = re.sub(r'[^a-zA-Z0-9]', '-', email_prefix).lower()
                     email_prefix = re.sub(r'-+', '-', email_prefix).strip('-')
                     container_name = f'{node_type}-{email_prefix}'
+                    # For non-datagram nodes without explicit container name, add numbering (-1, -2, -3, etc.)
+                    container_name = find_unique_container_name(client, container_name)
             
             # Sanitize container name
             container_name = re.sub(r'[^a-zA-Z0-9_.-]', '-', container_name)
             container_name = re.sub(r'-+', '-', container_name).strip('-')
-            
-            # For non-datagram nodes (email/password auth), always add numbering (-1, -2, -3, etc.)
-            if node_config['auth_type'] != 'api_key':
-                container_name = find_unique_container_name(client, container_name)
             
             if expiration and expiration != 'N/A':
                 try:
