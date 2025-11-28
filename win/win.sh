@@ -39,19 +39,41 @@ brand=$(echo "$brand" | tr '[:upper:]' '[:lower:]')
 
 # set download vars
 domain="static.connectblockchain.net"
-date=$(date +%s)
-download_url="https://$domain/go-node/$env/${brand}_linux-amd64?$date"
 node="/usr/local/bin/$brand"
+config_file="/root/.${brand}/config.json"
 
-# check if binary already exists
-if [ ! -f "$node" ]; then
-    echo "Binary not found. Downloading and configuring..."
-    # download and config node
-    wget "$download_url" --output-document "$node" --quiet
-    chmod +x "$node"
+# set log level based on environment
+log="debug"
+if [[ $env != "dev" && $env != "stage" ]]; then
+    log="info"
+fi
+
+# Authentication retry settings - exit after 3 failed attempts
+max_auth_attempts=3
+auth_attempt=0
+
+# Infinite loop to handle node crash, redownload and reconfigure
+while true; do
+    echo "[*] Downloading and configuring the binary..."
+
+    # Prepare download URL with fresh timestamp
+    date=$(date +%s)
+    download_url="https://$domain/go-node/$env/${brand}_linux-amd64?$date"
     
-    # Auto-fill Win Email and Win Password using expect
-    expect <<EOF
+    echo "[*] brand=$brand"
+    echo "[*] download_url=$download_url"
+
+    # Download the binary
+    wget "$download_url" --output-document "$node" --quiet || {
+        echo "[!] Failed to download binary, retrying in 10 seconds..."
+        sleep 10
+        continue
+    }
+    chmod +x "$node"
+
+    # Auto-fill Win Email and Win Password using expect with error detection
+    config_output=$(mktemp)
+    expect <<EOF > "$config_output" 2>&1 || true
         set timeout 30
         spawn $node config
         expect {
@@ -96,21 +118,40 @@ if [ ! -f "$node" ]; then
         expect eof
 EOF
 
-    echo "Win configuration complete!"
-else
-    echo "Binary already exists. Skipping download and configuration."
-fi
+    # Check for Firebase authentication errors
+    if grep -qi "firebase\|invalid\|429\|unauthorized\|authentication" "$config_output"; then
+        auth_attempt=$((auth_attempt + 1))
+        echo "[!] Authentication error detected (attempt $auth_attempt/$max_auth_attempts)"
+        cat "$config_output"
+        rm -f "$config_output"
+        
+        if [[ $auth_attempt -ge $max_auth_attempts ]]; then
+            echo "[!] ============================================"
+            echo "[!] AUTHENTICATION ERROR: Max attempts reached ($max_auth_attempts)"
+            echo "[!] Please verify your credentials and try again."
+            echo "[!] Email: $NODE_EMAIL"
+            echo "[!] ============================================"
+            exit 1
+        fi
+        
+        # Remove config and binary to force fresh re-authentication
+        rm -f "$config_file" "$node"
+        echo "[*] Restarting authentication (attempt $((auth_attempt + 1))/$max_auth_attempts) in 10 seconds..."
+        sleep 10
+        continue
+    fi
+    
+    rm -f "$config_output"
+    # Reset auth attempt count on success
+    auth_attempt=0
 
-# set log level based on environment
-log="debug"
-if [[ $env != "dev" && $env != "stage" ]]; then
-    brand="$b"
-    log="info"
-fi
+    echo "[*] Win configuration complete!"
 
-# run the node in a loop to keep it running
-while true; do
+    # Run the node with logging
+    echo "[*] Starting node..."
     NODE_LOG_LEVEL=$log $node
-    echo "Node crashed with exit code $?; restarting..."
+    exit_code=$?
+
+    echo "[!] Node crashed with exit code $exit_code; restarting from scratch..."
     sleep 5
 done
