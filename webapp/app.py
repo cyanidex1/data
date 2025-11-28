@@ -492,7 +492,7 @@ class TailscaleManager:
                     'hostname': status_data.get('Self', {}).get('HostName', 'N/A'),
                     'dns_name': status_data.get('Self', {}).get('DNSName', 'N/A'),
                     'online': status_data.get('Self', {}).get('Online', False),
-                    'peers': len(status_data.get('Peer', {})),
+                    'peers': len(status_data.get('Peer') or {}),
                     'raw': status_data
                 }
             except json.JSONDecodeError:
