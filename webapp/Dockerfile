@@ -27,6 +27,7 @@ RUN pip install --no-cache-dir --trusted-host pypi.org --trusted-host files.pyth
 # Copy application files
 COPY webapp/app.py .
 COPY webapp/templates/ templates/
+COPY webapp/static/ static/
 
 # Copy dockerfiles for node types
 COPY dockerfiles/ /app/dockerfiles/
