@@ -533,7 +533,7 @@
         <!-- Running Containers -->
         <div class="card">
             <div class="card-header">
-                <span class="icon-container"></span> Running Containers
+                <span class="icon-container"></span> Running Containers <span id="search-results-count" style="font-size: 12px; color: var(--text-muted-color); font-weight: normal;"></span>
                 <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                     <input type="text" id="container-search" placeholder="Search containers..." style="width: 200px; padding: 6px 12px; font-size: 12px;" oninput="filterContainers()">
                     {% if can_edit %}
@@ -922,9 +922,17 @@
         
         function renderContainers(containers) {
             const listDiv = document.getElementById('containers-list');
+            const searchResultsCount = document.getElementById('search-results-count');
+            const searchTerm = document.getElementById('container-search').value.trim();
+            
+            // Update search results count
+            if (searchTerm) {
+                searchResultsCount.textContent = `(${containers.length} of ${allContainers.length} results)`;
+            } else {
+                searchResultsCount.textContent = allContainers.length > 0 ? `(${allContainers.length} total)` : '';
+            }
             
             if (containers.length === 0) {
-                const searchTerm = document.getElementById('container-search').value;
                 if (searchTerm && allContainers.length > 0) {
                     listDiv.innerHTML = '<div class="empty-state">No containers match your search.</div>';
                 } else {
