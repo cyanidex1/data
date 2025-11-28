@@ -1667,8 +1667,8 @@ def import_keys():
                             break
                     if exists:
                         break
-            except:
-                pass
+            except (docker.errors.DockerException, docker.errors.APIError):
+                pass  # Ignore Docker errors during duplicate check
             
             if exists:
                 results['skipped'].append({
