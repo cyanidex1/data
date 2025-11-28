@@ -912,7 +912,8 @@
                 loadingDiv.style.display = 'none';
                 allContainers = data.containers; // Store all containers for filtering
                 
-                renderContainers(allContainers);
+                // Respect current search filter when refreshing
+                renderContainers(getDisplayedContainers());
             } catch (error) {
                 loadingDiv.style.display = 'none';
                 listDiv.innerHTML = '<div class="alert alert-error">Error loading containers: ' + error.message + '</div>';
