@@ -517,8 +517,6 @@
                 <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                     <input type="text" id="container-search" placeholder="Search containers..." style="width: 200px; padding: 6px 12px; font-size: 12px;" oninput="filterContainers()">
                     {% if can_edit %}
-                    <button onclick="syncCredentials()" class="btn btn-secondary btn-sm" title="Save container credentials to database"><span class="icon-refresh"></span> Sync to DB</button>
-                    <button onclick="startAllFromDB()" class="btn btn-secondary btn-sm" title="Start all containers from saved credentials"><span class="icon-play"></span> Start All from DB</button>
                     <button onclick="document.getElementById('import-file-input').click()" class="btn btn-secondary btn-sm"><span class="icon-add"></span> Import</button>
                     <input type="file" id="import-file-input" accept=".csv" style="display: none;" onchange="importKeys(this)">
                     {% endif %}
@@ -1178,49 +1176,6 @@
             } finally {
                 // Reset file input
                 input.value = '';
-            }
-        }
-        
-        async function syncCredentials() {
-            if (!confirm('Save all container credentials to the database? This will store credentials for easy restart.')) return;
-            
-            try {
-                showAlert('Syncing credentials to database...', 'success');
-                const response = await fetch('/api/credentials/sync', { method: 'POST' });
-                const data = await response.json();
-                
-                if (response.ok) {
-                    let message = `Synced ${data.synced} credentials to database`;
-                    if (data.errors && data.errors.length > 0) {
-                        message += ` (${data.errors.length} errors)`;
-                    }
-                    showAlert(message, data.errors && data.errors.length > 0 ? 'error' : 'success');
-                } else {
-                    showAlert('Sync failed: ' + data.error, 'error');
-                }
-            } catch (error) {
-                showAlert('Error syncing credentials: ' + error.message, 'error');
-            }
-        }
-        
-        async function startAllFromDB() {
-            if (!confirm('Start all containers from saved credentials? This will start containers for all credentials stored in the database.')) return;
-            
-            try {
-                showAlert('Starting containers from database...', 'success');
-                const response = await fetch('/api/credentials/start-all', { method: 'POST' });
-                const data = await response.json();
-                
-                if (response.ok) {
-                    const summary = data.summary;
-                    let message = `Started: ${summary.started}, Skipped: ${summary.skipped}, Failed: ${summary.failed}`;
-                    showAlert(message, summary.failed > 0 ? 'error' : 'success');
-                    refreshContainers();
-                } else {
-                    showAlert('Start failed: ' + data.error, 'error');
-                }
-            } catch (error) {
-                showAlert('Error starting containers: ' + error.message, 'error');
             }
         }
         
