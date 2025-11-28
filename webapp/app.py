@@ -151,6 +151,28 @@ def is_past_removal_date(expiration_date_str, days=7):
         return False
 
 
+def find_unique_container_name(client, base_name):
+    """
+    Find a unique container name by appending a number suffix.
+    Starts from -1 and increments until a unique name is found.
+    
+    Args:
+        client: Docker client instance
+        base_name: Base container name (e.g., 'element-user')
+    
+    Returns:
+        str: Unique container name (e.g., 'element-user-1', 'element-user-2')
+    """
+    counter = 1
+    while True:
+        container_name = f'{base_name}-{counter}'
+        try:
+            client.containers.get(container_name)
+            counter += 1
+        except docker.errors.NotFound:
+            return container_name
+
+
 class User(UserMixin):
     """User model for authentication"""
     
@@ -1118,9 +1140,9 @@ def start_container():
     env_vars['NODE_TYPE'] = node_type
     
     try:
-        # For datagram nodes, check if container already exists (no duplicates allowed)
-        # For non-datagram nodes, always add numbering to allow multiple instances
-        if node_type == 'datagram':
+        # For api_key nodes (datagram), check if container already exists (no duplicates allowed)
+        # For email/password nodes, always add numbering to allow multiple instances
+        if node_config['auth_type'] == 'api_key':
             try:
                 existing = client.containers.get(container_name)
                 return jsonify({'error': f'Container with name "{container_name}" already exists'}), 400
@@ -1128,15 +1150,7 @@ def start_container():
                 pass
         else:
             # For non-datagram nodes, always add numbering (-1, -2, -3, etc.)
-            base_name = container_name
-            counter = 1
-            while True:
-                container_name = f'{base_name}-{counter}'
-                try:
-                    client.containers.get(container_name)
-                    counter += 1
-                except docker.errors.NotFound:
-                    break
+            container_name = find_unique_container_name(client, container_name)
         
         # Check if image exists
         image_name = node_config['image']
@@ -1650,17 +1664,9 @@ def import_keys():
             container_name = re.sub(r'[^a-zA-Z0-9_.-]', '-', container_name)
             container_name = re.sub(r'-+', '-', container_name).strip('-')
             
-            # For non-datagram nodes, always add numbering (-1, -2, -3, etc.)
+            # For non-datagram nodes (email/password auth), always add numbering (-1, -2, -3, etc.)
             if node_config['auth_type'] != 'api_key':
-                base_name = container_name
-                counter = 1
-                while True:
-                    container_name = f'{base_name}-{counter}'
-                    try:
-                        client.containers.get(container_name)
-                        counter += 1
-                    except docker.errors.NotFound:
-                        break
+                container_name = find_unique_container_name(client, container_name)
             
             if expiration and expiration != 'N/A':
                 try:
