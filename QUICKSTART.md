@@ -10,7 +10,7 @@
 Before starting the control panel, build the datagram node image:
 
 ```bash
-docker build --platform linux/amd64 -t datagram .
+docker build --platform linux/amd64 -t datagram datagram/
 ```
 
 ### Step 2: Start the Control Panel
@@ -92,7 +92,7 @@ sudo systemctl restart docker
 
 ## Integration with Existing Cron Job
 
-The control panel works seamlessly with your existing `unhealthy.sh` cron job (runs every 30 minutes). The cron job provides automatic recovery:
+The control panel works seamlessly with your existing `datagram/unhealthy.sh` cron job (runs every 30 minutes). The cron job provides automatic recovery:
 - Restarts unhealthy containers
 - Starts exited containers
 
@@ -158,7 +158,7 @@ See README.md for complete API documentation.
 ### "Image 'datagram' not found" error
 Build the datagram image first:
 ```bash
-docker build --platform linux/amd64 -t datagram .
+docker build --platform linux/amd64 -t datagram datagram/
 ```
 
 ### Remote host connection fails

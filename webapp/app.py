@@ -4,13 +4,14 @@ Docker Control Panel for Datagram Nodes
 Web application for managing Docker containers across multiple hosts
 """
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session, make_response
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session, make_response, send_from_directory
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 import docker
 import json
 import os
 import re
+import subprocess
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -30,7 +31,76 @@ login_manager.login_message = 'Please log in to access the control panel.'
 DATA_DIR = os.environ.get('DATA_DIR', '/data')
 HOSTS_FILE = os.path.join(DATA_DIR, 'docker_hosts.json')
 USERS_FILE = os.path.join(DATA_DIR, 'users.json')
+TAILSCALE_CONFIG_FILE = os.path.join(DATA_DIR, 'tailscale_config.json')
 DEFAULT_IMAGE = 'datagram'
+
+# Node type configurations
+NODE_TYPES = {
+    'datagram': {
+        'name': 'Datagram',
+        'description': 'Datagram CLI node using API key',
+        'image': 'datagram',
+        'auth_type': 'api_key',  # Uses LICENSE_KEY
+        'dockerfile': 'datagram.Dockerfile',
+        'env_vars': ['LICENSE_KEY']
+    },
+    'element': {
+        'name': 'Element',
+        'description': 'Element United node',
+        'image': 'element-node',
+        'auth_type': 'email_password',  # Uses email/password
+        'dockerfile': 'element.Dockerfile',
+        'env_vars': ['NODE_EMAIL', 'NODE_PASSWORD', 'NODE_NAME']
+    },
+    'elevate': {
+        'name': 'Elevate',
+        'description': 'Elevate United node',
+        'image': 'elevate-node',
+        'auth_type': 'email_password',
+        'dockerfile': 'elevate.Dockerfile',
+        'env_vars': ['NODE_EMAIL', 'NODE_PASSWORD', 'NODE_NAME']
+    },
+    'grow': {
+        'name': 'Grow',
+        'description': 'Grow Blockchain node',
+        'image': 'grow-node',
+        'auth_type': 'email_password',
+        'dockerfile': 'grow.Dockerfile',
+        'env_vars': ['NODE_EMAIL', 'NODE_PASSWORD', 'NODE_NAME']
+    },
+    'revo': {
+        'name': 'Revo',
+        'description': 'RevoRide node',
+        'image': 'revo-node',
+        'auth_type': 'email_password',
+        'dockerfile': 'revo.Dockerfile',
+        'env_vars': ['NODE_EMAIL', 'NODE_PASSWORD', 'NODE_NAME']
+    },
+    'rlink': {
+        'name': 'RLink',
+        'description': 'RLink Rally node',
+        'image': 'rlink-node',
+        'auth_type': 'email_password',
+        'dockerfile': 'rlink.Dockerfile',
+        'env_vars': ['NODE_EMAIL', 'NODE_PASSWORD', 'NODE_NAME']
+    },
+    'switch': {
+        'name': 'Switch',
+        'description': 'Switch Reward Card node',
+        'image': 'switch-node',
+        'auth_type': 'email_password',
+        'dockerfile': 'switch.Dockerfile',
+        'env_vars': ['NODE_EMAIL', 'NODE_PASSWORD', 'NODE_NAME']
+    },
+    'win': {
+        'name': 'Win',
+        'description': 'Win node',
+        'image': 'win-node',
+        'auth_type': 'email_password',
+        'dockerfile': 'win.Dockerfile',
+        'env_vars': ['NODE_EMAIL', 'NODE_PASSWORD', 'NODE_NAME']
+    }
+}
 
 
 def is_expired(expiration_date_str):
@@ -329,6 +399,214 @@ class DockerHostManager:
 host_manager = DockerHostManager(HOSTS_FILE)
 
 
+class TailscaleManager:
+    """Manages Tailscale VPN connection"""
+    
+    TAILSCALE_SOCKET = '/var/run/tailscale/tailscaled.sock'
+    
+    def __init__(self, config_file):
+        self.config_file = config_file
+        self.config = self.load_config()
+    
+    def load_config(self):
+        """Load Tailscale configuration from file"""
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, 'r') as f:
+                    return json.load(f)
+            except Exception as e:
+                print(f"Error loading Tailscale config: {e}")
+                return {}
+        return {}
+    
+    def save_config(self, auth_key=None, hostname=None):
+        """Save Tailscale configuration to file"""
+        os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
+        if auth_key is not None:
+            self.config['auth_key'] = auth_key
+        if hostname is not None:
+            self.config['hostname'] = hostname
+        self.config['updated_at'] = datetime.now().isoformat()
+        with open(self.config_file, 'w') as f:
+            json.dump(self.config, f, indent=2)
+    
+    def get_saved_auth_key(self):
+        """Get saved auth key from config"""
+        return self.config.get('auth_key')
+    
+    def auto_connect(self):
+        """Attempt to auto-connect using saved auth key if not already connected"""
+        status = self.get_status()
+        if status.get('connected'):
+            return {'success': True, 'message': 'Already connected'}
+        
+        auth_key = self.get_saved_auth_key()
+        if not auth_key:
+            return {'success': False, 'message': 'No saved auth key'}
+        
+        hostname = self.config.get('hostname')
+        return self.connect(auth_key, hostname, save_key=False)
+    
+    def _run_tailscale_cmd(self, args, timeout=30):
+        """Run a tailscale command and return output"""
+        cmd = ['tailscale', f'--socket={self.TAILSCALE_SOCKET}'] + args
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout
+            )
+            return {
+                'success': result.returncode == 0,
+                'stdout': result.stdout.strip(),
+                'stderr': result.stderr.strip(),
+                'returncode': result.returncode
+            }
+        except subprocess.TimeoutExpired:
+            return {
+                'success': False,
+                'stdout': '',
+                'stderr': 'Command timed out',
+                'returncode': -1
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'stdout': '',
+                'stderr': str(e),
+                'returncode': -1
+            }
+    
+    def get_status(self):
+        """Get current Tailscale status"""
+        result = self._run_tailscale_cmd(['status', '--json'])
+        
+        if result['success']:
+            try:
+                status_data = json.loads(result['stdout'])
+                return {
+                    'connected': status_data.get('BackendState') == 'Running',
+                    'backend_state': status_data.get('BackendState', 'Unknown'),
+                    'tailscale_ip': status_data.get('TailscaleIPs', ['N/A'])[0] if status_data.get('TailscaleIPs') else 'N/A',
+                    'hostname': status_data.get('Self', {}).get('HostName', 'N/A'),
+                    'dns_name': status_data.get('Self', {}).get('DNSName', 'N/A'),
+                    'online': status_data.get('Self', {}).get('Online', False),
+                    'peers': len(status_data.get('Peer') or {}),
+                    'raw': status_data
+                }
+            except json.JSONDecodeError:
+                return {
+                    'connected': False,
+                    'backend_state': 'Unknown',
+                    'error': 'Failed to parse status JSON'
+                }
+        else:
+            # Check if the error indicates not logged in
+            if 'not logged in' in result['stderr'].lower() or 'needslogin' in result['stderr'].lower():
+                return {
+                    'connected': False,
+                    'backend_state': 'NeedsLogin',
+                    'message': 'Not connected to Tailscale network'
+                }
+            return {
+                'connected': False,
+                'backend_state': 'Error',
+                'error': result['stderr'] or 'Failed to get status'
+            }
+    
+    def connect(self, auth_key, hostname=None, save_key=True):
+        """Connect to Tailscale network using auth key"""
+        if not auth_key:
+            return {'success': False, 'error': 'Auth key is required'}
+        
+        # Validate auth key format (tskey-auth-xxx or tskey-xxx)
+        if not re.match(r'^tskey-[a-zA-Z0-9-]+$', auth_key):
+            return {'success': False, 'error': 'Invalid auth key format. Should start with "tskey-"'}
+        
+        # Build the command
+        args = ['up', f'--authkey={auth_key}', '--accept-routes']
+        
+        if hostname:
+            # Sanitize hostname - replace invalid chars, remove consecutive hyphens
+            hostname = re.sub(r'[^a-zA-Z0-9-]', '-', hostname)
+            hostname = re.sub(r'-+', '-', hostname).strip('-')[:63]
+            if hostname:
+                args.append(f'--hostname={hostname}')
+        
+        result = self._run_tailscale_cmd(args, timeout=60)
+        
+        if result['success']:
+            # Save auth key and hostname for reconnection on restart
+            if save_key:
+                self.save_config(auth_key=auth_key, hostname=hostname)
+            else:
+                self.save_config(hostname=hostname)
+            return {
+                'success': True,
+                'message': 'Successfully connected to Tailscale network'
+            }
+        else:
+            return {
+                'success': False,
+                'error': result['stderr'] or 'Failed to connect to Tailscale'
+            }
+    
+    def disconnect(self):
+        """Disconnect from Tailscale network"""
+        result = self._run_tailscale_cmd(['down'])
+        
+        if result['success']:
+            return {
+                'success': True,
+                'message': 'Successfully disconnected from Tailscale network'
+            }
+        else:
+            return {
+                'success': False,
+                'error': result['stderr'] or 'Failed to disconnect from Tailscale'
+            }
+    
+    def logout(self):
+        """Logout from Tailscale (removes device from account)"""
+        result = self._run_tailscale_cmd(['logout'])
+        
+        if result['success']:
+            # Clear saved config
+            self.config = {}
+            self.save_config()
+            return {
+                'success': True,
+                'message': 'Successfully logged out from Tailscale'
+            }
+        else:
+            return {
+                'success': False,
+                'error': result['stderr'] or 'Failed to logout from Tailscale'
+            }
+
+
+# Initialize Tailscale manager
+tailscale_manager = TailscaleManager(TAILSCALE_CONFIG_FILE)
+
+# Attempt auto-connect to Tailscale if auth key is saved
+def _try_tailscale_auto_connect():
+    """Try to auto-connect to Tailscale on startup"""
+    try:
+        result = tailscale_manager.auto_connect()
+        if result.get('success'):
+            print("[*] Tailscale auto-connect: Already connected or reconnected successfully")
+        elif result.get('message') == 'No saved auth key':
+            print("[*] Tailscale auto-connect: No saved auth key, manual connection required")
+        else:
+            print(f"[!] Tailscale auto-connect failed: {result.get('error', result.get('message', 'Unknown error'))}")
+    except Exception as e:
+        print(f"[!] Tailscale auto-connect error: {e}")
+
+# Run auto-connect in a background thread to not block startup
+threading.Thread(target=_try_tailscale_auto_connect, daemon=True).start()
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     """Login page"""
@@ -531,6 +809,27 @@ def update_theme():
     return jsonify({'error': 'Failed to update theme'}), 500
 
 
+@app.route('/api/node-types', methods=['GET'])
+@login_required
+def get_node_types():
+    """Get available node types configuration"""
+    if not current_user.can_view():
+        return jsonify({'error': 'View privileges required'}), 403
+    
+    # Return node types with their metadata (without internal details)
+    node_types_info = {
+        key: {
+            'name': config['name'],
+            'description': config['description'],
+            'auth_type': config['auth_type'],
+            'image': config['image']
+        }
+        for key, config in NODE_TYPES.items()
+    }
+    
+    return jsonify({'node_types': node_types_info})
+
+
 @app.route('/')
 @login_required
 def index():
@@ -606,6 +905,70 @@ def update_host(host_id):
     return jsonify({'success': True, 'host': result})
 
 
+# Tailscale API Endpoints
+@app.route('/api/tailscale/status', methods=['GET'])
+@login_required
+def tailscale_status():
+    """Get Tailscale connection status - admin only"""
+    if not current_user.is_admin():
+        return jsonify({'error': 'Admin privileges required'}), 403
+    
+    status = tailscale_manager.get_status()
+    return jsonify({'status': status})
+
+
+@app.route('/api/tailscale/connect', methods=['POST'])
+@login_required
+def tailscale_connect():
+    """Connect to Tailscale network - admin only"""
+    if not current_user.is_admin():
+        return jsonify({'error': 'Admin privileges required'}), 403
+    
+    data = request.json
+    auth_key = data.get('auth_key')
+    hostname = data.get('hostname')
+    
+    if not auth_key:
+        return jsonify({'error': 'Auth key is required'}), 400
+    
+    result = tailscale_manager.connect(auth_key, hostname)
+    
+    if result['success']:
+        return jsonify(result)
+    else:
+        return jsonify(result), 400
+
+
+@app.route('/api/tailscale/disconnect', methods=['POST'])
+@login_required
+def tailscale_disconnect():
+    """Disconnect from Tailscale network - admin only"""
+    if not current_user.is_admin():
+        return jsonify({'error': 'Admin privileges required'}), 403
+    
+    result = tailscale_manager.disconnect()
+    
+    if result['success']:
+        return jsonify(result)
+    else:
+        return jsonify(result), 400
+
+
+@app.route('/api/tailscale/logout', methods=['POST'])
+@login_required
+def tailscale_logout():
+    """Logout from Tailscale (removes device) - admin only"""
+    if not current_user.is_admin():
+        return jsonify({'error': 'Admin privileges required'}), 403
+    
+    result = tailscale_manager.logout()
+    
+    if result['success']:
+        return jsonify(result)
+    else:
+        return jsonify(result), 400
+
+
 @app.route('/api/containers', methods=['GET'])
 @login_required
 def list_containers():
@@ -623,15 +986,22 @@ def list_containers():
         try:
             containers = client.containers.list(all=True)
             for container in containers:
-                # Get environment variables to extract the key
+                # Get environment variables to extract credentials
                 env_vars = container.attrs.get('Config', {}).get('Env', [])
                 license_key = None
                 expiration_date = None
+                node_type = None
+                node_email = None
+                
                 for env in env_vars:
                     if env.startswith('LICENSE_KEY='):
                         license_key = env.split('=', 1)[1]
                     elif env.startswith('EXPIRATION_DATE='):
                         expiration_date = env.split('=', 1)[1]
+                    elif env.startswith('NODE_TYPE='):
+                        node_type = env.split('=', 1)[1]
+                    elif env.startswith('NODE_EMAIL='):
+                        node_email = env.split('=', 1)[1]
                 
                 # Determine container status
                 status = container.status
@@ -647,6 +1017,8 @@ def list_containers():
                     'image': container.image.tags[0] if container.image.tags else container.image.id[:12],
                     'created': container.attrs['Created'],
                     'key': license_key,
+                    'email': node_email,
+                    'node_type': node_type,
                     'expiration_date': expiration_date
                 })
         except Exception as e:
@@ -658,21 +1030,21 @@ def list_containers():
 @app.route('/api/containers/start', methods=['POST'])
 @login_required
 def start_container():
-    """Start a new container with a given key - requires edit permission"""
+    """Start a new container - requires edit permission"""
     if not current_user.can_edit():
         return jsonify({'error': 'Edit privileges required'}), 403
     
     data = request.json
     host_id = data.get('host_id')
-    key = data.get('key')
-    expiration_date = data.get('expiration_date')  # Optional expiration date
+    node_type = data.get('node_type', 'datagram')
+    expiration_date = data.get('expiration_date')
+    container_name = data.get('container_name')
     
-    # Validate key format: 32 characters, only 0-9 and a-z
-    if not key or len(key) != 32:
-        return jsonify({'error': 'Invalid key. Must be exactly 32 characters'}), 400
+    # Validate node type
+    if node_type not in NODE_TYPES:
+        return jsonify({'error': f'Invalid node type: {node_type}'}), 400
     
-    if not re.match(r'^[0-9a-z]{32}$', key):
-        return jsonify({'error': 'Invalid key. Must contain only numbers (0-9) and lowercase letters (a-z)'}), 400
+    node_config = NODE_TYPES[node_type]
     
     if host_id is None:
         return jsonify({'error': 'Host ID is required'}), 400
@@ -681,43 +1053,81 @@ def start_container():
     if not client:
         return jsonify({'error': 'Could not connect to Docker host'}), 500
     
-    try:
-        # Use the key as the container name
-        container_name = key
+    # Prepare environment variables based on auth type
+    env_vars = {}
+    
+    if node_config['auth_type'] == 'api_key':
+        # Datagram uses LICENSE_KEY
+        key = data.get('key')
+        if not key or len(key) != 32:
+            return jsonify({'error': 'Invalid key. Must be exactly 32 characters'}), 400
+        if not re.match(r'^[0-9a-z]{32}$', key):
+            return jsonify({'error': 'Invalid key. Must contain only numbers (0-9) and lowercase letters (a-z)'}), 400
+        env_vars['LICENSE_KEY'] = key
+        if not container_name:
+            container_name = key
+    else:
+        # Email/password authentication
+        email = data.get('email')
+        password = data.get('password')
+        node_name = data.get('node_name', f'{node_type}-node')
         
-        # Check if container with this key already exists across all hosts
-        for host in host_manager.hosts:
-            check_client = host_manager.get_client(host['id'])
-            if check_client:
-                try:
-                    existing_containers = check_client.containers.list(all=True)
-                    for c in existing_containers:
-                        env_vars = c.attrs.get('Config', {}).get('Env', [])
-                        for env in env_vars:
-                            if env.startswith('LICENSE_KEY=') and env.split('=', 1)[1] == key:
-                                return jsonify({'error': f'Container with key "{key}" already exists on host "{host["name"]}"'}), 400
-                except:
-                    pass
+        if not email:
+            return jsonify({'error': 'Email is required'}), 400
+        if not password:
+            return jsonify({'error': 'Password is required'}), 400
         
-        # Check if image exists, if not return error (user should build it on the host)
+        # Basic email validation
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
+            return jsonify({'error': 'Invalid email format'}), 400
+        
+        env_vars['NODE_EMAIL'] = email
+        env_vars['NODE_PASSWORD'] = password
+        if 'NODE_NAME' in node_config['env_vars']:
+            env_vars['NODE_NAME'] = node_name
+        
+        if not container_name:
+            # Generate container name from email prefix and node type
+            email_prefix = email.split('@')[0][:16]
+            # Sanitize: only allow alphanumeric and hyphens
+            email_prefix = re.sub(r'[^a-zA-Z0-9]', '-', email_prefix).lower()
+            # Remove consecutive hyphens
+            email_prefix = re.sub(r'-+', '-', email_prefix).strip('-')
+            container_name = f'{node_type}-{email_prefix}'
+    
+    # Sanitize container name and remove consecutive hyphens
+    container_name = re.sub(r'[^a-zA-Z0-9_.-]', '-', container_name)
+    container_name = re.sub(r'-+', '-', container_name).strip('-')
+    
+    # Add expiration date if provided
+    if expiration_date:
         try:
-            client.images.get(DEFAULT_IMAGE)
-        except docker.errors.ImageNotFound:
-            return jsonify({'error': f'Image "{DEFAULT_IMAGE}" not found on host. Please build it first.'}), 400
+            datetime.fromisoformat(expiration_date.replace('Z', '+00:00'))
+            env_vars['EXPIRATION_DATE'] = expiration_date
+        except (ValueError, AttributeError):
+            return jsonify({'error': 'Invalid expiration date format. Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)'}), 400
+    
+    # Store node type for identification
+    env_vars['NODE_TYPE'] = node_type
+    
+    try:
+        # Check if container with this name already exists
+        try:
+            existing = client.containers.get(container_name)
+            return jsonify({'error': f'Container with name "{container_name}" already exists'}), 400
+        except docker.errors.NotFound:
+            pass
         
-        # Prepare environment variables
-        env_vars = {'LICENSE_KEY': key}
-        if expiration_date:
-            # Validate and store expiration date
-            try:
-                exp_dt = datetime.fromisoformat(expiration_date)
-                env_vars['EXPIRATION_DATE'] = expiration_date
-            except:
-                return jsonify({'error': 'Invalid expiration date format. Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)'}), 400
+        # Check if image exists
+        image_name = node_config['image']
+        try:
+            client.images.get(image_name)
+        except docker.errors.ImageNotFound:
+            return jsonify({'error': f'Image "{image_name}" not found on host. Please build it first.'}), 400
         
         # Start the container
         container = client.containers.run(
-            DEFAULT_IMAGE,
+            image_name,
             name=container_name,
             environment=env_vars,
             platform='linux/amd64',
@@ -730,7 +1140,8 @@ def start_container():
         return jsonify({
             'success': True,
             'container_id': container.id[:12],
-            'container_name': container_name
+            'container_name': container_name,
+            'node_type': node_type
         })
     
     except Exception as e:
@@ -846,16 +1257,101 @@ def get_container_logs(host_id, container_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/containers/<host_id>/<container_id>/update-expiration', methods=['POST'])
+@login_required
+def update_container_expiration(host_id, container_id):
+    """Update container expiration date - requires edit permission
+    
+    This recreates the container with the updated expiration date environment variable.
+    """
+    if not current_user.can_edit():
+        return jsonify({'error': 'Edit privileges required'}), 403
+    
+    data = request.json
+    expiration_date = data.get('expiration_date')
+    
+    try:
+        client = host_manager.get_client(int(host_id))
+        if not client:
+            return jsonify({'error': 'Could not connect to Docker host'}), 500
+        
+        container = client.containers.get(container_id)
+        
+        # Get current container configuration
+        config = container.attrs.get('Config', {})
+        env_vars = config.get('Env', [])
+        # Safely get image name - check if tags list has items
+        if container.image.tags and len(container.image.tags) > 0:
+            image = container.image.tags[0]
+        else:
+            image = container.image.id
+        container_name = container.name
+        
+        # Parse existing environment variables
+        new_env = {}
+        for env in env_vars:
+            if '=' in env:
+                key, value = env.split('=', 1)
+                new_env[key] = value
+        
+        # Update or remove expiration date
+        if expiration_date:
+            try:
+                # Validate the expiration date format
+                datetime.fromisoformat(expiration_date.replace('Z', '+00:00'))
+                new_env['EXPIRATION_DATE'] = expiration_date
+            except (ValueError, AttributeError):
+                return jsonify({'error': 'Invalid expiration date format. Use ISO format (YYYY-MM-DDTHH:MM:SS)'}), 400
+        else:
+            # Remove expiration date if empty (set to never expire)
+            new_env.pop('EXPIRATION_DATE', None)
+        
+        # Get host config for restart policy
+        host_config = container.attrs.get('HostConfig', {})
+        restart_policy = host_config.get('RestartPolicy', {'Name': 'unless-stopped'})
+        mem_limit = host_config.get('Memory', 104857600)  # 100MB default
+        memswap_limit = host_config.get('MemorySwap', 209715200)  # 200MB default
+        
+        # Stop and remove the old container
+        was_running = container.status == 'running'
+        container.remove(force=True)
+        
+        # Create new container with updated expiration date
+        new_container = client.containers.run(
+            image,
+            name=container_name,
+            environment=new_env,
+            platform='linux/amd64',
+            detach=True,
+            restart_policy=restart_policy,
+            mem_limit=mem_limit,
+            memswap_limit=memswap_limit
+        )
+        
+        # If the original container was not running, stop the new one
+        if not was_running:
+            new_container.stop()
+        
+        return jsonify({
+            'success': True,
+            'container_id': new_container.id[:12],
+            'expiration_date': expiration_date if expiration_date else None
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/containers/export-keys', methods=['GET'])
 @login_required
 def export_keys():
-    """Export all container keys to CSV - requires view permission"""
+    """Export all container credentials to CSV - requires view permission"""
     if not current_user.can_view():
         return jsonify({'error': 'View privileges required'}), 403
     
     try:
-        # Collect all keys from all hosts
-        all_keys = []
+        # Collect all credentials from all hosts
+        all_credentials = []
         
         for host in host_manager.hosts:
             client = host_manager.get_client(host['id'])
@@ -868,36 +1364,63 @@ def export_keys():
                     env_vars = container.attrs.get('Config', {}).get('Env', [])
                     license_key = None
                     expiration_date = None
+                    node_type = None
+                    node_email = None
+                    node_password = None
+                    node_name = None
                     
                     for env in env_vars:
                         if env.startswith('LICENSE_KEY='):
                             license_key = env.split('=', 1)[1]
                         elif env.startswith('EXPIRATION_DATE='):
                             expiration_date = env.split('=', 1)[1]
+                        elif env.startswith('NODE_TYPE='):
+                            node_type = env.split('=', 1)[1]
+                        elif env.startswith('NODE_EMAIL='):
+                            node_email = env.split('=', 1)[1]
+                        elif env.startswith('NODE_PASSWORD='):
+                            node_password = env.split('=', 1)[1]
+                        elif env.startswith('NODE_NAME='):
+                            node_name = env.split('=', 1)[1]
                     
-                    if license_key:
-                        all_keys.append({
+                    # Only export containers with credentials
+                    if license_key or node_email:
+                        all_credentials.append({
                             'host': host['name'],
                             'container': container.name,
-                            'key': license_key,
+                            'node_type': node_type or 'datagram',
+                            'key': license_key or '',
+                            'email': node_email or '',
+                            'password': node_password or '',
+                            'node_name': node_name or '',
                             'status': container.status,
                             'expiration': expiration_date or 'N/A'
                         })
             except Exception as e:
-                print(f"Error getting keys from host {host['name']}: {e}")
+                print(f"Error getting credentials from host {host['name']}: {e}")
         
-        # Create CSV
+        # Create CSV with new format supporting all node types
         output = StringIO()
         writer = csv.writer(output)
-        writer.writerow(['Host', 'Container', 'Key', 'Status', 'Expiration'])
+        writer.writerow(['Host', 'Container', 'NodeType', 'Key', 'Email', 'Password', 'NodeName', 'Status', 'Expiration'])
         
-        for item in all_keys:
-            writer.writerow([item['host'], item['container'], item['key'], item['status'], item['expiration']])
+        for item in all_credentials:
+            writer.writerow([
+                item['host'], 
+                item['container'], 
+                item['node_type'],
+                item['key'], 
+                item['email'],
+                item['password'],
+                item['node_name'],
+                item['status'], 
+                item['expiration']
+            ])
         
         # Create response
         response = make_response(output.getvalue())
         response.headers['Content-Type'] = 'text/csv'
-        response.headers['Content-Disposition'] = f'attachment; filename=container_keys_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        response.headers['Content-Disposition'] = f'attachment; filename=container_credentials_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
         
         return response
     except Exception as e:
@@ -907,7 +1430,12 @@ def export_keys():
 @app.route('/api/containers/import-keys', methods=['POST'])
 @login_required
 def import_keys():
-    """Import container keys from CSV - requires edit permission"""
+    """Import container credentials from CSV - requires edit permission
+    
+    Supports two CSV formats:
+    1. New format: Host, Container, NodeType, Key, Email, Password, NodeName, Status, Expiration
+    2. Legacy format: Host, Container, Key, Status, Expiration (for datagram only)
+    """
     if not current_user.can_edit():
         return jsonify({'error': 'Edit privileges required'}), 403
     
@@ -927,10 +1455,21 @@ def import_keys():
         stream = StringIO(file.stream.read().decode('utf-8'))
         reader = csv.DictReader(stream)
         
-        # Validate headers
-        expected_headers = {'Host', 'Container', 'Key', 'Status', 'Expiration'}
-        if not expected_headers.issubset(set(reader.fieldnames or [])):
-            return jsonify({'error': f'Invalid CSV format. Expected headers: {", ".join(expected_headers)}'}), 400
+        # Detect format based on headers
+        fieldnames = set(reader.fieldnames or [])
+        new_format_headers = {'Host', 'NodeType', 'Key', 'Email', 'Password'}
+        legacy_headers = {'Host', 'Container', 'Key', 'Status', 'Expiration'}
+        
+        is_new_format = 'NodeType' in fieldnames or 'Email' in fieldnames
+        
+        if is_new_format:
+            # New format - check for required headers
+            if 'Host' not in fieldnames:
+                return jsonify({'error': 'CSV must have a "Host" column'}), 400
+        else:
+            # Legacy format - validate old headers
+            if not legacy_headers.issubset(fieldnames):
+                return jsonify({'error': f'Invalid CSV format. Expected headers: {", ".join(legacy_headers)} or new format with NodeType, Email, Password columns'}), 400
         
         # Process each row
         results = {
@@ -941,25 +1480,68 @@ def import_keys():
         
         for row_num, row in enumerate(reader, start=2):  # Start at 2 (header is row 1)
             host_name = row.get('Host', '').strip()
+            node_type = row.get('NodeType', 'datagram').strip() or 'datagram'
             key = row.get('Key', '').strip()
+            email = row.get('Email', '').strip()
+            password = row.get('Password', '').strip()
+            node_name = row.get('NodeName', '').strip()
             expiration = row.get('Expiration', '').strip()
+            container_name = row.get('Container', '').strip()
             
-            # Validate key
-            if not key:
+            # Validate node type
+            if node_type not in NODE_TYPES:
                 results['failed'].append({
                     'row': row_num,
-                    'key': key,
-                    'error': 'Missing key'
+                    'identifier': key or email or 'unknown',
+                    'error': f'Invalid node type: {node_type}'
                 })
                 continue
             
-            if len(key) != 32 or not re.match(r'^[0-9a-z]{32}$', key):
-                results['failed'].append({
-                    'row': row_num,
-                    'key': key,
-                    'error': 'Invalid key format (must be 32 characters, 0-9 and a-z only)'
-                })
-                continue
+            node_config = NODE_TYPES[node_type]
+            
+            # Validate credentials based on auth type
+            if node_config['auth_type'] == 'api_key':
+                if not key:
+                    results['failed'].append({
+                        'row': row_num,
+                        'identifier': 'missing',
+                        'error': 'Missing key for datagram node'
+                    })
+                    continue
+                
+                if len(key) != 32 or not re.match(r'^[0-9a-z]{32}$', key):
+                    results['failed'].append({
+                        'row': row_num,
+                        'identifier': key,
+                        'error': 'Invalid key format (must be 32 characters, 0-9 and a-z only)'
+                    })
+                    continue
+            else:
+                # Email/password auth
+                if not email:
+                    results['failed'].append({
+                        'row': row_num,
+                        'identifier': 'missing',
+                        'error': f'Missing email for {node_type} node'
+                    })
+                    continue
+                
+                if not password:
+                    results['failed'].append({
+                        'row': row_num,
+                        'identifier': email,
+                        'error': f'Missing password for {node_type} node'
+                    })
+                    continue
+                
+                # Basic email validation
+                if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
+                    results['failed'].append({
+                        'row': row_num,
+                        'identifier': email,
+                        'error': 'Invalid email format'
+                    })
+                    continue
             
             # Find host by name
             host = None
@@ -971,31 +1553,41 @@ def import_keys():
             if not host:
                 results['failed'].append({
                     'row': row_num,
-                    'key': key,
+                    'identifier': key or email,
                     'error': f'Host "{host_name}" not found'
                 })
                 continue
             
-            # Check if container already exists
+            # Get Docker client
             client = host_manager.get_client(host['id'])
             if not client:
                 results['failed'].append({
                     'row': row_num,
-                    'key': key,
+                    'identifier': key or email,
                     'error': f'Could not connect to host "{host_name}"'
                 })
                 continue
             
-            # Check if container with this key already exists
+            # Check if container with same credentials already exists
             exists = False
             try:
                 containers = client.containers.list(all=True)
                 for c in containers:
                     env_vars = c.attrs.get('Config', {}).get('Env', [])
                     for env in env_vars:
-                        if env.startswith('LICENSE_KEY=') and env.split('=', 1)[1] == key:
-                            exists = True
-                            break
+                        if node_config['auth_type'] == 'api_key':
+                            if env.startswith('LICENSE_KEY=') and env.split('=', 1)[1] == key:
+                                exists = True
+                                break
+                        else:
+                            if env.startswith('NODE_EMAIL=') and env.split('=', 1)[1] == email:
+                                # Check node type too
+                                for env2 in env_vars:
+                                    if env2.startswith('NODE_TYPE=') and env2.split('=', 1)[1] == node_type:
+                                        exists = True
+                                        break
+                                if exists:
+                                    break
                     if exists:
                         break
             except:
@@ -1004,38 +1596,59 @@ def import_keys():
             if exists:
                 results['skipped'].append({
                     'row': row_num,
-                    'key': key,
-                    'reason': 'Container with this key already exists'
+                    'identifier': key or email,
+                    'reason': f'Container with this {"key" if key else "email"} already exists for {node_type}'
                 })
                 continue
             
             # Check if image exists
+            image_name = node_config['image']
             try:
-                client.images.get(DEFAULT_IMAGE)
+                client.images.get(image_name)
             except docker.errors.ImageNotFound:
                 results['failed'].append({
                     'row': row_num,
-                    'key': key,
-                    'error': f'Image "{DEFAULT_IMAGE}" not found on host "{host_name}"'
+                    'identifier': key or email,
+                    'error': f'Image "{image_name}" not found on host "{host_name}"'
                 })
                 continue
             
             # Prepare environment variables
-            env_vars = {'LICENSE_KEY': key}
+            env_vars = {'NODE_TYPE': node_type}
+            
+            if node_config['auth_type'] == 'api_key':
+                env_vars['LICENSE_KEY'] = key
+                if not container_name:
+                    container_name = key
+            else:
+                env_vars['NODE_EMAIL'] = email
+                env_vars['NODE_PASSWORD'] = password
+                if 'NODE_NAME' in node_config['env_vars'] and node_name:
+                    env_vars['NODE_NAME'] = node_name
+                
+                if not container_name:
+                    # Generate container name from email prefix and node type
+                    email_prefix = email.split('@')[0][:16]
+                    email_prefix = re.sub(r'[^a-zA-Z0-9]', '-', email_prefix).lower()
+                    email_prefix = re.sub(r'-+', '-', email_prefix).strip('-')
+                    container_name = f'{node_type}-{email_prefix}'
+            
+            # Sanitize container name
+            container_name = re.sub(r'[^a-zA-Z0-9_.-]', '-', container_name)
+            container_name = re.sub(r'-+', '-', container_name).strip('-')
+            
             if expiration and expiration != 'N/A':
                 try:
-                    # Try to parse the expiration date
-                    exp_dt = datetime.fromisoformat(expiration)
+                    datetime.fromisoformat(expiration.replace('Z', '+00:00'))
                     env_vars['EXPIRATION_DATE'] = expiration
                 except:
-                    # If parsing fails, skip expiration date
-                    pass
+                    pass  # If parsing fails, skip expiration date
             
             # Start the container
             try:
                 container = client.containers.run(
-                    DEFAULT_IMAGE,
-                    name=key,
+                    image_name,
+                    name=container_name,
                     environment=env_vars,
                     platform='linux/amd64',
                     detach=True,
@@ -1046,14 +1659,15 @@ def import_keys():
                 
                 results['success'].append({
                     'row': row_num,
-                    'key': key,
+                    'identifier': key or email,
                     'host': host_name,
+                    'node_type': node_type,
                     'container_id': container.id[:12]
                 })
             except Exception as e:
                 results['failed'].append({
                     'row': row_num,
-                    'key': key,
+                    'identifier': key or email,
                     'error': str(e)
                 })
         

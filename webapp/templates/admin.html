@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Panel - Datagram Control Panel</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='favicon-32x32.png') }}">
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='favicon-16x16.png') }}">
+    <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.png') }}">
     <style>
         :root {
             --bg-color: #0d1117;
@@ -391,6 +395,61 @@
                 </div>
             </div>
         </div>
+
+        <!-- Tailscale VPN -->
+        <div class="card">
+            <div class="card-header">
+                🔗 Tailscale VPN
+                <button onclick="refreshTailscaleStatus()" class="btn btn-secondary btn-sm">↻ Refresh</button>
+            </div>
+            <div class="card-body">
+                <div id="tailscale-status-loading" style="text-align: center; padding: 16px; color: #8b949e;">
+                    Loading Tailscale status...
+                </div>
+                <div id="tailscale-status-content" style="display: none;">
+                    <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
+                        <div>
+                            <h4 style="font-size: 14px; color: var(--text-muted-color); margin-bottom: 12px;">Connection Status</h4>
+                            <p style="margin-bottom: 8px;">
+                                <strong>Status:</strong> 
+                                <span id="ts-status-badge" class="badge"></span>
+                            </p>
+                            <p style="margin-bottom: 8px;"><strong>Backend State:</strong> <span id="ts-backend-state">-</span></p>
+                            <p style="margin-bottom: 8px;"><strong>Tailscale IP:</strong> <code id="ts-ip">-</code></p>
+                            <p style="margin-bottom: 8px;"><strong>Hostname:</strong> <span id="ts-hostname">-</span></p>
+                            <p style="margin-bottom: 8px;"><strong>DNS Name:</strong> <code id="ts-dns-name">-</code></p>
+                            <p style="margin-bottom: 8px;"><strong>Peers Connected:</strong> <span id="ts-peers">-</span></p>
+                        </div>
+                        <div>
+                            <h4 style="font-size: 14px; color: var(--text-muted-color); margin-bottom: 12px;">Connect to Tailscale</h4>
+                            <div id="tailscale-connect-form">
+                                <div class="form-group">
+                                    <label for="ts-auth-key">Auth Key</label>
+                                    <input type="password" id="ts-auth-key" placeholder="tskey-auth-xxxxx..." style="font-family: monospace;">
+                                    <div class="help-text">Get your auth key from <a href="https://login.tailscale.com/admin/settings/keys" target="_blank" style="color: var(--primary-color);">Tailscale Admin Console</a>. The key will be saved for auto-reconnection on restart.</div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="ts-hostname">Custom Hostname (optional)</label>
+                                    <input type="text" id="ts-hostname-input" placeholder="datagram-control-panel">
+                                    <div class="help-text">Leave empty to use the default hostname</div>
+                                </div>
+                                <div class="btn-group" style="display: flex; gap: 8px; margin-top: 16px;">
+                                    <button onclick="connectTailscale()" class="btn btn-primary" id="ts-connect-btn">
+                                        🔗 Connect
+                                    </button>
+                                    <button onclick="disconnectTailscale()" class="btn btn-secondary" id="ts-disconnect-btn" style="display: none;">
+                                        ⏹ Disconnect
+                                    </button>
+                                    <button onclick="logoutTailscale()" class="btn btn-danger" id="ts-logout-btn" style="display: none;">
+                                        🚪 Logout
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Add User Modal -->
@@ -594,6 +653,9 @@
                 e.preventDefault();
                 updateHost();
             });
+            
+            // Load Tailscale status on page load
+            refreshTailscaleStatus();
         });
         
         function showAlert(message, type) {
@@ -851,6 +913,170 @@
             if (event.target === statsModal) closeStatsModal();
             if (event.target === editUserModal) closeEditUserModal();
             if (event.target === editHostModal) closeEditHostModal();
+        }
+        
+        // Tailscale Functions
+        async function refreshTailscaleStatus() {
+            const loading = document.getElementById('tailscale-status-loading');
+            const content = document.getElementById('tailscale-status-content');
+            
+            loading.style.display = 'block';
+            content.style.display = 'none';
+            
+            try {
+                const response = await fetch('/api/tailscale/status');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    const status = data.status;
+                    
+                    // Update status badge
+                    const badge = document.getElementById('ts-status-badge');
+                    if (status.connected) {
+                        badge.textContent = 'Connected';
+                        badge.className = 'badge badge-admin';
+                        badge.style.background = '#1f2d1f';
+                        badge.style.color = '#3fb950';
+                    } else if (status.backend_state === 'NeedsLogin') {
+                        badge.textContent = 'Not Connected';
+                        badge.className = 'badge';
+                        badge.style.background = '#2d1b1e';
+                        badge.style.color = '#f85149';
+                    } else {
+                        badge.textContent = status.backend_state || 'Unknown';
+                        badge.className = 'badge';
+                        badge.style.background = '#3d2e00';
+                        badge.style.color = '#f0b72f';
+                    }
+                    
+                    // Update other fields
+                    document.getElementById('ts-backend-state').textContent = status.backend_state || '-';
+                    document.getElementById('ts-ip').textContent = status.tailscale_ip || '-';
+                    document.getElementById('ts-hostname').textContent = status.hostname || '-';
+                    document.getElementById('ts-dns-name').textContent = status.dns_name || '-';
+                    document.getElementById('ts-peers').textContent = status.peers !== undefined ? status.peers : '-';
+                    
+                    // Show/hide buttons based on connection status
+                    const connectBtn = document.getElementById('ts-connect-btn');
+                    const disconnectBtn = document.getElementById('ts-disconnect-btn');
+                    const logoutBtn = document.getElementById('ts-logout-btn');
+                    
+                    if (status.connected) {
+                        connectBtn.style.display = 'none';
+                        disconnectBtn.style.display = 'inline-block';
+                        logoutBtn.style.display = 'inline-block';
+                    } else {
+                        connectBtn.style.display = 'inline-block';
+                        disconnectBtn.style.display = 'none';
+                        logoutBtn.style.display = status.backend_state !== 'NeedsLogin' ? 'inline-block' : 'none';
+                    }
+                    
+                    loading.style.display = 'none';
+                    content.style.display = 'block';
+                } else {
+                    loading.innerHTML = '<div style="color: #f85149;">Error: ' + (data.error || 'Failed to get status') + '</div>';
+                }
+            } catch (error) {
+                loading.innerHTML = '<div style="color: #f85149;">Error loading Tailscale status: ' + error.message + '</div>';
+            }
+        }
+        
+        async function connectTailscale() {
+            const authKey = document.getElementById('ts-auth-key').value.trim();
+            const hostname = document.getElementById('ts-hostname-input').value.trim();
+            
+            if (!authKey) {
+                showAlert('Please enter a Tailscale auth key', 'error');
+                return;
+            }
+            
+            if (!authKey.startsWith('tskey-')) {
+                showAlert('Invalid auth key format. Should start with "tskey-"', 'error');
+                return;
+            }
+            
+            const connectBtn = document.getElementById('ts-connect-btn');
+            connectBtn.disabled = true;
+            connectBtn.textContent = '⏳ Connecting...';
+            
+            try {
+                const response = await fetch('/api/tailscale/connect', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ auth_key: authKey, hostname: hostname || null })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showAlert('Successfully connected to Tailscale network!', 'success');
+                    document.getElementById('ts-auth-key').value = '';
+                    await refreshTailscaleStatus();
+                } else {
+                    showAlert('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error connecting to Tailscale: ' + error.message, 'error');
+            } finally {
+                connectBtn.disabled = false;
+                connectBtn.textContent = '🔗 Connect';
+            }
+        }
+        
+        async function disconnectTailscale() {
+            if (!confirm('Disconnect from Tailscale network? You can reconnect later.')) return;
+            
+            const disconnectBtn = document.getElementById('ts-disconnect-btn');
+            disconnectBtn.disabled = true;
+            disconnectBtn.textContent = '⏳ Disconnecting...';
+            
+            try {
+                const response = await fetch('/api/tailscale/disconnect', {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showAlert('Successfully disconnected from Tailscale', 'success');
+                    await refreshTailscaleStatus();
+                } else {
+                    showAlert('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error disconnecting from Tailscale: ' + error.message, 'error');
+            } finally {
+                disconnectBtn.disabled = false;
+                disconnectBtn.textContent = '⏹ Disconnect';
+            }
+        }
+        
+        async function logoutTailscale() {
+            if (!confirm('Logout from Tailscale? This will remove this device from your Tailscale account. You will need to re-authenticate with a new auth key.')) return;
+            
+            const logoutBtn = document.getElementById('ts-logout-btn');
+            logoutBtn.disabled = true;
+            logoutBtn.textContent = '⏳ Logging out...';
+            
+            try {
+                const response = await fetch('/api/tailscale/logout', {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showAlert('Successfully logged out from Tailscale', 'success');
+                    await refreshTailscaleStatus();
+                } else {
+                    showAlert('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error logging out from Tailscale: ' + error.message, 'error');
+            } finally {
+                logoutBtn.disabled = false;
+                logoutBtn.textContent = '🚪 Logout';
+            }
         }
         
         function applyTheme(theme) {

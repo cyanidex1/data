@@ -1,8 +1,8 @@
-version: '3.8'
-
 services:
   datagram-control-panel:
-    build: ./webapp
+    build:
+      context: .
+      dockerfile: webapp/Dockerfile
     container_name: datagram-control-panel
     ports:
       - "5000:5000"
@@ -11,6 +11,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       # Persistent storage for host configuration
       - ./data:/data
+      # Persistent storage for Tailscale state
+      - tailscale-state:/var/lib/tailscale
     environment:
       - SECRET_KEY=${SECRET_KEY:-change-this-to-a-random-secret-key}
       - DEBUG=${DEBUG:-False}
@@ -19,8 +21,15 @@ services:
     restart: unless-stopped
     # Run as root to access Docker socket
     user: root
+    # Required for Tailscale userspace networking
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
     networks:
       - datagram-network
+
+volumes:
+  tailscale-state:
 
 networks:
   datagram-network:
