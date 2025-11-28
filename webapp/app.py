@@ -419,14 +419,33 @@ class TailscaleManager:
                 return {}
         return {}
     
-    def save_config(self, hostname=None):
-        """Save Tailscale configuration to file (does not store auth key for security)"""
+    def save_config(self, auth_key=None, hostname=None):
+        """Save Tailscale configuration to file"""
         os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
+        if auth_key is not None:
+            self.config['auth_key'] = auth_key
         if hostname is not None:
             self.config['hostname'] = hostname
         self.config['updated_at'] = datetime.now().isoformat()
         with open(self.config_file, 'w') as f:
             json.dump(self.config, f, indent=2)
+    
+    def get_saved_auth_key(self):
+        """Get saved auth key from config"""
+        return self.config.get('auth_key')
+    
+    def auto_connect(self):
+        """Attempt to auto-connect using saved auth key if not already connected"""
+        status = self.get_status()
+        if status.get('connected'):
+            return {'success': True, 'message': 'Already connected'}
+        
+        auth_key = self.get_saved_auth_key()
+        if not auth_key:
+            return {'success': False, 'message': 'No saved auth key'}
+        
+        hostname = self.config.get('hostname')
+        return self.connect(auth_key, hostname, save_key=False)
     
     def _run_tailscale_cmd(self, args, timeout=30):
         """Run a tailscale command and return output"""
@@ -496,7 +515,7 @@ class TailscaleManager:
                 'error': result['stderr'] or 'Failed to get status'
             }
     
-    def connect(self, auth_key, hostname=None):
+    def connect(self, auth_key, hostname=None, save_key=True):
         """Connect to Tailscale network using auth key"""
         if not auth_key:
             return {'success': False, 'error': 'Auth key is required'}
@@ -518,8 +537,11 @@ class TailscaleManager:
         result = self._run_tailscale_cmd(args, timeout=60)
         
         if result['success']:
-            # Save only hostname (not auth key for security reasons)
-            self.save_config(hostname=hostname)
+            # Save auth key and hostname for reconnection on restart
+            if save_key:
+                self.save_config(auth_key=auth_key, hostname=hostname)
+            else:
+                self.save_config(hostname=hostname)
             return {
                 'success': True,
                 'message': 'Successfully connected to Tailscale network'
@@ -566,6 +588,23 @@ class TailscaleManager:
 
 # Initialize Tailscale manager
 tailscale_manager = TailscaleManager(TAILSCALE_CONFIG_FILE)
+
+# Attempt auto-connect to Tailscale if auth key is saved
+def _try_tailscale_auto_connect():
+    """Try to auto-connect to Tailscale on startup"""
+    try:
+        result = tailscale_manager.auto_connect()
+        if result.get('success'):
+            print("[*] Tailscale auto-connect: Already connected or reconnected successfully")
+        elif result.get('message') == 'No saved auth key':
+            print("[*] Tailscale auto-connect: No saved auth key, manual connection required")
+        else:
+            print(f"[!] Tailscale auto-connect failed: {result.get('error', result.get('message', 'Unknown error'))}")
+    except Exception as e:
+        print(f"[!] Tailscale auto-connect error: {e}")
+
+# Run auto-connect in a background thread to not block startup
+threading.Thread(target=_try_tailscale_auto_connect, daemon=True).start()
 
 
 @app.route('/login', methods=['GET', 'POST'])
