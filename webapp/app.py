@@ -419,11 +419,9 @@ class TailscaleManager:
                 return {}
         return {}
     
-    def save_config(self, auth_key=None, hostname=None):
-        """Save Tailscale configuration to file"""
+    def save_config(self, hostname=None):
+        """Save Tailscale configuration to file (does not store auth key for security)"""
         os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
-        if auth_key is not None:
-            self.config['auth_key'] = auth_key
         if hostname is not None:
             self.config['hostname'] = hostname
         self.config['updated_at'] = datetime.now().isoformat()
@@ -511,15 +509,17 @@ class TailscaleManager:
         args = ['up', f'--authkey={auth_key}', '--accept-routes']
         
         if hostname:
-            # Sanitize hostname
-            hostname = re.sub(r'[^a-zA-Z0-9-]', '-', hostname)[:63]
-            args.append(f'--hostname={hostname}')
+            # Sanitize hostname - replace invalid chars, remove consecutive hyphens
+            hostname = re.sub(r'[^a-zA-Z0-9-]', '-', hostname)
+            hostname = re.sub(r'-+', '-', hostname).strip('-')[:63]
+            if hostname:
+                args.append(f'--hostname={hostname}')
         
         result = self._run_tailscale_cmd(args, timeout=60)
         
         if result['success']:
-            # Save config on successful connection
-            self.save_config(auth_key='***saved***', hostname=hostname)
+            # Save only hostname (not auth key for security reasons)
+            self.save_config(hostname=hostname)
             return {
                 'success': True,
                 'message': 'Successfully connected to Tailscale network'

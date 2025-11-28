@@ -25,9 +25,18 @@ start_tailscaled() {
     # Start tailscaled in userspace networking mode (works without TUN device)
     tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/var/run/tailscale/tailscaled.sock --tun=userspace-networking &
     
-    # Wait for tailscaled to be ready
-    sleep 2
-    echo "[*] Tailscale daemon started"
+    # Wait for tailscaled to be ready (up to 10 seconds)
+    local max_attempts=10
+    local attempt=0
+    while [ $attempt -lt $max_attempts ]; do
+        if tailscale --socket=/var/run/tailscale/tailscaled.sock status &>/dev/null; then
+            echo "[*] Tailscale daemon is ready"
+            return 0
+        fi
+        attempt=$((attempt + 1))
+        sleep 1
+    done
+    echo "[!] Warning: Tailscale daemon may not be fully ready, continuing anyway..."
 }
 
 # Build a single Docker image
