@@ -154,15 +154,22 @@ def is_past_removal_date(expiration_date_str, days=7):
 def find_unique_container_name(client, base_name):
     """
     Find a unique container name by appending a number suffix.
-    Starts from -1 and increments until a unique name is found.
+    If the base_name already ends with a number suffix (e.g., 'element-user-1'),
+    it strips the existing number and finds the next available number.
     
     Args:
         client: Docker client instance
-        base_name: Base container name (e.g., 'element-user')
+        base_name: Base container name (e.g., 'element-user' or 'element-user-1')
     
     Returns:
         str: Unique container name (e.g., 'element-user-1', 'element-user-2')
     """
+    # Strip existing number suffix if present (e.g., 'element-user-1' -> 'element-user')
+    # Match pattern: name ending with -<number>
+    match = re.match(r'^(.+)-(\d+)$', base_name)
+    if match:
+        base_name = match.group(1)  # Use the part before the number
+    
     counter = 1
     while True:
         container_name = f'{base_name}-{counter}'
