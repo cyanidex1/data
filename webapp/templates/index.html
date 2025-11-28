@@ -202,6 +202,22 @@
         
         .actions { display: flex; gap: 4px; flex-wrap: wrap; }
         
+        .selected-row {
+            background: rgba(88, 166, 255, 0.1) !important;
+        }
+        
+        .container-checkbox {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+        
+        #select-all-checkbox {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+        
         .empty-state {
             text-align: center;
             padding: 48px 16px;
@@ -527,6 +543,19 @@
                     <button onclick="refreshContainers()" class="btn btn-secondary btn-sm"><span class="icon-refresh"></span> Refresh</button>
                 </div>
             </div>
+            {% if can_edit %}
+            <!-- Bulk Actions Bar (hidden by default) -->
+            <div id="bulk-actions-bar" style="display: none; padding: 12px 16px; background: var(--bg-color); border-bottom: 1px solid var(--border-color);">
+                <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                    <span id="selected-count" style="font-size: 14px; color: var(--text-muted-color);">0 selected</span>
+                    <button onclick="bulkStartContainers()" class="btn btn-primary btn-sm"><span class="icon-play"></span> Start Selected</button>
+                    <button onclick="bulkStopContainers()" class="btn btn-secondary btn-sm"><span class="icon-stop"></span> Stop Selected</button>
+                    <button onclick="bulkRestartContainers()" class="btn btn-secondary btn-sm"><span class="icon-restart"></span> Restart Selected</button>
+                    <button onclick="bulkRemoveContainers()" class="btn btn-danger btn-sm"><span class="icon-remove"></span> Remove Selected</button>
+                    <button onclick="clearSelection()" class="btn btn-secondary btn-sm">Clear Selection</button>
+                </div>
+            </div>
+            {% endif %}
             <div id="containers-loading" style="padding: 24px; text-align: center; color: #8b949e;">Loading containers...</div>
             <div id="containers-list"></div>
         </div>
@@ -633,6 +662,7 @@
         let refreshInterval;
         let allContainers = []; // Store all containers for filtering
         let nodeTypes = {}; // Store node types configuration
+        let selectedContainers = new Set(); // Store selected container keys (host_id:container_id)
         const canEdit = {{ 'true' if can_edit else 'false' }};
         
         document.addEventListener('DOMContentLoaded', function() {
@@ -897,11 +927,16 @@
                 } else {
                     listDiv.innerHTML = '<div class="empty-state">No containers running. Start one above!</div>';
                 }
+                updateBulkActionsBar();
             } else {
+                // Check if all displayed containers are selected
+                const allSelected = containers.length > 0 && containers.every(c => selectedContainers.has(`${c.host_id}:${c.id}`));
+                
                 listDiv.innerHTML = `
                     <table>
                         <thead>
                             <tr>
+                                ${canEdit ? `<th style="width: 40px;"><input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll(this)" ${allSelected ? 'checked' : ''} title="Select All"></th>` : ''}
                                 <th>Host</th>
                                 <th>Name</th>
                                 <th>Type</th>
@@ -912,8 +947,12 @@
                             </tr>
                         </thead>
                         <tbody>
-                            ${containers.map(c => `
-                                <tr>
+                            ${containers.map(c => {
+                                const containerKey = `${c.host_id}:${c.id}`;
+                                const isSelected = selectedContainers.has(containerKey);
+                                return `
+                                <tr class="${isSelected ? 'selected-row' : ''}">
+                                    ${canEdit ? `<td><input type="checkbox" class="container-checkbox" data-host="${c.host_id}" data-container="${c.id}" onchange="toggleContainerSelection(this)" ${isSelected ? 'checked' : ''}></td>` : ''}
                                     <td>${c.host_name}</td>
                                     <td><code>${c.name}</code></td>
                                     <td><span class="badge badge-node-type">${c.node_type || 'datagram'}</span></td>
@@ -934,11 +973,219 @@
                                         </div>
                                     </td>
                                 </tr>
-                            `).join('')}
+                            `}).join('')}
                         </tbody>
                     </table>
                 `;
+                updateBulkActionsBar();
             }
+        }
+        
+        function toggleContainerSelection(checkbox) {
+            const hostId = checkbox.dataset.host;
+            const containerId = checkbox.dataset.container;
+            const containerKey = `${hostId}:${containerId}`;
+            
+            if (checkbox.checked) {
+                selectedContainers.add(containerKey);
+                checkbox.closest('tr').classList.add('selected-row');
+            } else {
+                selectedContainers.delete(containerKey);
+                checkbox.closest('tr').classList.remove('selected-row');
+            }
+            
+            updateBulkActionsBar();
+            updateSelectAllCheckbox();
+        }
+        
+        function toggleSelectAll(checkbox) {
+            // Get currently displayed containers (respecting search filter)
+            const searchTerm = document.getElementById('container-search').value.toLowerCase().trim();
+            const displayedContainers = searchTerm ? 
+                allContainers.filter(c => {
+                    const searchableText = [c.host_name, c.name, c.status, c.image, c.node_type || '', c.key || '', c.email || ''].join(' ').toLowerCase();
+                    return searchableText.includes(searchTerm);
+                }) : allContainers;
+            
+            if (checkbox.checked) {
+                // Select all displayed containers
+                displayedContainers.forEach(c => {
+                    selectedContainers.add(`${c.host_id}:${c.id}`);
+                });
+            } else {
+                // Deselect all displayed containers
+                displayedContainers.forEach(c => {
+                    selectedContainers.delete(`${c.host_id}:${c.id}`);
+                });
+            }
+            
+            // Re-render to update checkboxes
+            renderContainers(displayedContainers);
+        }
+        
+        function updateSelectAllCheckbox() {
+            const selectAllCheckbox = document.getElementById('select-all-checkbox');
+            if (!selectAllCheckbox) return;
+            
+            const checkboxes = document.querySelectorAll('.container-checkbox');
+            const allChecked = checkboxes.length > 0 && Array.from(checkboxes).every(cb => cb.checked);
+            const someChecked = Array.from(checkboxes).some(cb => cb.checked);
+            
+            selectAllCheckbox.checked = allChecked;
+            selectAllCheckbox.indeterminate = someChecked && !allChecked;
+        }
+        
+        function updateBulkActionsBar() {
+            const bulkActionsBar = document.getElementById('bulk-actions-bar');
+            if (!bulkActionsBar) return;
+            
+            const selectedCount = selectedContainers.size;
+            const selectedCountSpan = document.getElementById('selected-count');
+            
+            if (selectedCount > 0) {
+                bulkActionsBar.style.display = 'block';
+                selectedCountSpan.textContent = `${selectedCount} selected`;
+            } else {
+                bulkActionsBar.style.display = 'none';
+            }
+        }
+        
+        function clearSelection() {
+            selectedContainers.clear();
+            // Re-render current view
+            const searchTerm = document.getElementById('container-search').value.toLowerCase().trim();
+            if (searchTerm) {
+                filterContainers();
+            } else {
+                renderContainers(allContainers);
+            }
+        }
+        
+        async function bulkStartContainers() {
+            if (selectedContainers.size === 0) return;
+            
+            const toStart = Array.from(selectedContainers);
+            let successCount = 0;
+            let failCount = 0;
+            
+            for (const key of toStart) {
+                const [hostId, containerId] = key.split(':');
+                try {
+                    const response = await fetch(`/api/containers/${hostId}/${containerId}/start`, { method: 'POST' });
+                    if (response.ok) {
+                        successCount++;
+                    } else {
+                        failCount++;
+                    }
+                } catch (error) {
+                    failCount++;
+                }
+            }
+            
+            if (successCount > 0) {
+                showAlert(`Started ${successCount} container(s)${failCount > 0 ? `, ${failCount} failed` : ''}`, 'success');
+            } else if (failCount > 0) {
+                showAlert(`Failed to start ${failCount} container(s)`, 'error');
+            }
+            
+            clearSelection();
+            refreshContainers();
+        }
+        
+        async function bulkStopContainers() {
+            if (selectedContainers.size === 0) return;
+            if (!confirm(`Stop ${selectedContainers.size} container(s)?`)) return;
+            
+            const toStop = Array.from(selectedContainers);
+            let successCount = 0;
+            let failCount = 0;
+            
+            for (const key of toStop) {
+                const [hostId, containerId] = key.split(':');
+                try {
+                    const response = await fetch(`/api/containers/${hostId}/${containerId}/stop`, { method: 'POST' });
+                    if (response.ok) {
+                        successCount++;
+                    } else {
+                        failCount++;
+                    }
+                } catch (error) {
+                    failCount++;
+                }
+            }
+            
+            if (successCount > 0) {
+                showAlert(`Stopped ${successCount} container(s)${failCount > 0 ? `, ${failCount} failed` : ''}`, 'success');
+            } else if (failCount > 0) {
+                showAlert(`Failed to stop ${failCount} container(s)`, 'error');
+            }
+            
+            clearSelection();
+            refreshContainers();
+        }
+        
+        async function bulkRestartContainers() {
+            if (selectedContainers.size === 0) return;
+            if (!confirm(`Restart ${selectedContainers.size} container(s)?`)) return;
+            
+            const toRestart = Array.from(selectedContainers);
+            let successCount = 0;
+            let failCount = 0;
+            
+            for (const key of toRestart) {
+                const [hostId, containerId] = key.split(':');
+                try {
+                    const response = await fetch(`/api/containers/${hostId}/${containerId}/restart`, { method: 'POST' });
+                    if (response.ok) {
+                        successCount++;
+                    } else {
+                        failCount++;
+                    }
+                } catch (error) {
+                    failCount++;
+                }
+            }
+            
+            if (successCount > 0) {
+                showAlert(`Restarted ${successCount} container(s)${failCount > 0 ? `, ${failCount} failed` : ''}`, 'success');
+            } else if (failCount > 0) {
+                showAlert(`Failed to restart ${failCount} container(s)`, 'error');
+            }
+            
+            clearSelection();
+            refreshContainers();
+        }
+        
+        async function bulkRemoveContainers() {
+            if (selectedContainers.size === 0) return;
+            if (!confirm(`Remove ${selectedContainers.size} container(s)? This action cannot be undone.`)) return;
+            
+            const toRemove = Array.from(selectedContainers);
+            let successCount = 0;
+            let failCount = 0;
+            
+            for (const key of toRemove) {
+                const [hostId, containerId] = key.split(':');
+                try {
+                    const response = await fetch(`/api/containers/${hostId}/${containerId}/remove`, { method: 'DELETE' });
+                    if (response.ok) {
+                        successCount++;
+                    } else {
+                        failCount++;
+                    }
+                } catch (error) {
+                    failCount++;
+                }
+            }
+            
+            if (successCount > 0) {
+                showAlert(`Removed ${successCount} container(s)${failCount > 0 ? `, ${failCount} failed` : ''}`, 'success');
+            } else if (failCount > 0) {
+                showAlert(`Failed to remove ${failCount} container(s)`, 'error');
+            }
+            
+            clearSelection();
+            refreshContainers();
         }
         
         function filterContainers() {

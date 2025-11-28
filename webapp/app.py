@@ -1701,6 +1701,15 @@ def get_host_stats(host_id):
         # Get disk usage
         df = client.df()
         
+        # Count only tagged images (what 'docker image ls' shows)
+        # info.get('Images') includes intermediate layers, which inflates the count
+        try:
+            images_list = client.images.list()
+            tagged_images_count = len(images_list)
+        except Exception:
+            # Fallback to info() count if listing fails
+            tagged_images_count = info.get('Images', 0)
+        
         # Calculate stats
         stats = {
             'cpu': {
@@ -1718,7 +1727,7 @@ def get_host_stats(host_id):
                 'stopped': info.get('ContainersStopped', 0),
                 'paused': info.get('ContainersPaused', 0),
             },
-            'images': info.get('Images', 0),
+            'images': tagged_images_count,
             'docker_version': info.get('ServerVersion', 'Unknown'),
             'os': info.get('OperatingSystem', 'Unknown'),
             'architecture': info.get('Architecture', 'Unknown'),
