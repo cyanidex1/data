@@ -11,6 +11,7 @@ import docker
 import json
 import os
 import re
+import subprocess
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -30,6 +31,7 @@ login_manager.login_message = 'Please log in to access the control panel.'
 DATA_DIR = os.environ.get('DATA_DIR', '/data')
 HOSTS_FILE = os.path.join(DATA_DIR, 'docker_hosts.json')
 USERS_FILE = os.path.join(DATA_DIR, 'users.json')
+TAILSCALE_CONFIG_FILE = os.path.join(DATA_DIR, 'tailscale_config.json')
 DEFAULT_IMAGE = 'datagram'
 
 # Node type configurations
@@ -397,6 +399,175 @@ class DockerHostManager:
 host_manager = DockerHostManager(HOSTS_FILE)
 
 
+class TailscaleManager:
+    """Manages Tailscale VPN connection"""
+    
+    TAILSCALE_SOCKET = '/var/run/tailscale/tailscaled.sock'
+    
+    def __init__(self, config_file):
+        self.config_file = config_file
+        self.config = self.load_config()
+    
+    def load_config(self):
+        """Load Tailscale configuration from file"""
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, 'r') as f:
+                    return json.load(f)
+            except Exception as e:
+                print(f"Error loading Tailscale config: {e}")
+                return {}
+        return {}
+    
+    def save_config(self, auth_key=None, hostname=None):
+        """Save Tailscale configuration to file"""
+        os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
+        if auth_key is not None:
+            self.config['auth_key'] = auth_key
+        if hostname is not None:
+            self.config['hostname'] = hostname
+        self.config['updated_at'] = datetime.now().isoformat()
+        with open(self.config_file, 'w') as f:
+            json.dump(self.config, f, indent=2)
+    
+    def _run_tailscale_cmd(self, args, timeout=30):
+        """Run a tailscale command and return output"""
+        cmd = ['tailscale', f'--socket={self.TAILSCALE_SOCKET}'] + args
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout
+            )
+            return {
+                'success': result.returncode == 0,
+                'stdout': result.stdout.strip(),
+                'stderr': result.stderr.strip(),
+                'returncode': result.returncode
+            }
+        except subprocess.TimeoutExpired:
+            return {
+                'success': False,
+                'stdout': '',
+                'stderr': 'Command timed out',
+                'returncode': -1
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'stdout': '',
+                'stderr': str(e),
+                'returncode': -1
+            }
+    
+    def get_status(self):
+        """Get current Tailscale status"""
+        result = self._run_tailscale_cmd(['status', '--json'])
+        
+        if result['success']:
+            try:
+                status_data = json.loads(result['stdout'])
+                return {
+                    'connected': status_data.get('BackendState') == 'Running',
+                    'backend_state': status_data.get('BackendState', 'Unknown'),
+                    'tailscale_ip': status_data.get('TailscaleIPs', ['N/A'])[0] if status_data.get('TailscaleIPs') else 'N/A',
+                    'hostname': status_data.get('Self', {}).get('HostName', 'N/A'),
+                    'dns_name': status_data.get('Self', {}).get('DNSName', 'N/A'),
+                    'online': status_data.get('Self', {}).get('Online', False),
+                    'peers': len(status_data.get('Peer', {})),
+                    'raw': status_data
+                }
+            except json.JSONDecodeError:
+                return {
+                    'connected': False,
+                    'backend_state': 'Unknown',
+                    'error': 'Failed to parse status JSON'
+                }
+        else:
+            # Check if the error indicates not logged in
+            if 'not logged in' in result['stderr'].lower() or 'needslogin' in result['stderr'].lower():
+                return {
+                    'connected': False,
+                    'backend_state': 'NeedsLogin',
+                    'message': 'Not connected to Tailscale network'
+                }
+            return {
+                'connected': False,
+                'backend_state': 'Error',
+                'error': result['stderr'] or 'Failed to get status'
+            }
+    
+    def connect(self, auth_key, hostname=None):
+        """Connect to Tailscale network using auth key"""
+        if not auth_key:
+            return {'success': False, 'error': 'Auth key is required'}
+        
+        # Validate auth key format (tskey-auth-xxx or tskey-xxx)
+        if not re.match(r'^tskey-[a-zA-Z0-9-]+$', auth_key):
+            return {'success': False, 'error': 'Invalid auth key format. Should start with "tskey-"'}
+        
+        # Build the command
+        args = ['up', f'--authkey={auth_key}', '--accept-routes']
+        
+        if hostname:
+            # Sanitize hostname
+            hostname = re.sub(r'[^a-zA-Z0-9-]', '-', hostname)[:63]
+            args.append(f'--hostname={hostname}')
+        
+        result = self._run_tailscale_cmd(args, timeout=60)
+        
+        if result['success']:
+            # Save config on successful connection
+            self.save_config(auth_key='***saved***', hostname=hostname)
+            return {
+                'success': True,
+                'message': 'Successfully connected to Tailscale network'
+            }
+        else:
+            return {
+                'success': False,
+                'error': result['stderr'] or 'Failed to connect to Tailscale'
+            }
+    
+    def disconnect(self):
+        """Disconnect from Tailscale network"""
+        result = self._run_tailscale_cmd(['down'])
+        
+        if result['success']:
+            return {
+                'success': True,
+                'message': 'Successfully disconnected from Tailscale network'
+            }
+        else:
+            return {
+                'success': False,
+                'error': result['stderr'] or 'Failed to disconnect from Tailscale'
+            }
+    
+    def logout(self):
+        """Logout from Tailscale (removes device from account)"""
+        result = self._run_tailscale_cmd(['logout'])
+        
+        if result['success']:
+            # Clear saved config
+            self.config = {}
+            self.save_config()
+            return {
+                'success': True,
+                'message': 'Successfully logged out from Tailscale'
+            }
+        else:
+            return {
+                'success': False,
+                'error': result['stderr'] or 'Failed to logout from Tailscale'
+            }
+
+
+# Initialize Tailscale manager
+tailscale_manager = TailscaleManager(TAILSCALE_CONFIG_FILE)
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     """Login page"""
@@ -693,6 +864,70 @@ def update_host(host_id):
         return jsonify({'error': 'Host not found'}), 404
     
     return jsonify({'success': True, 'host': result})
+
+
+# Tailscale API Endpoints
+@app.route('/api/tailscale/status', methods=['GET'])
+@login_required
+def tailscale_status():
+    """Get Tailscale connection status - admin only"""
+    if not current_user.is_admin():
+        return jsonify({'error': 'Admin privileges required'}), 403
+    
+    status = tailscale_manager.get_status()
+    return jsonify({'status': status})
+
+
+@app.route('/api/tailscale/connect', methods=['POST'])
+@login_required
+def tailscale_connect():
+    """Connect to Tailscale network - admin only"""
+    if not current_user.is_admin():
+        return jsonify({'error': 'Admin privileges required'}), 403
+    
+    data = request.json
+    auth_key = data.get('auth_key')
+    hostname = data.get('hostname')
+    
+    if not auth_key:
+        return jsonify({'error': 'Auth key is required'}), 400
+    
+    result = tailscale_manager.connect(auth_key, hostname)
+    
+    if result['success']:
+        return jsonify(result)
+    else:
+        return jsonify(result), 400
+
+
+@app.route('/api/tailscale/disconnect', methods=['POST'])
+@login_required
+def tailscale_disconnect():
+    """Disconnect from Tailscale network - admin only"""
+    if not current_user.is_admin():
+        return jsonify({'error': 'Admin privileges required'}), 403
+    
+    result = tailscale_manager.disconnect()
+    
+    if result['success']:
+        return jsonify(result)
+    else:
+        return jsonify(result), 400
+
+
+@app.route('/api/tailscale/logout', methods=['POST'])
+@login_required
+def tailscale_logout():
+    """Logout from Tailscale (removes device) - admin only"""
+    if not current_user.is_admin():
+        return jsonify({'error': 'Admin privileges required'}), 403
+    
+    result = tailscale_manager.logout()
+    
+    if result['success']:
+        return jsonify(result)
+    else:
+        return jsonify(result), 400
 
 
 @app.route('/api/containers', methods=['GET'])

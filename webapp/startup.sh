@@ -16,6 +16,20 @@ declare -A NODE_IMAGES=(
     ["win"]="win-node"
 )
 
+# Start Tailscale daemon in the background
+start_tailscaled() {
+    echo "[*] Starting Tailscale daemon..."
+    # Ensure state directory exists
+    mkdir -p /var/lib/tailscale /var/run/tailscale
+    
+    # Start tailscaled in userspace networking mode (works without TUN device)
+    tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/var/run/tailscale/tailscaled.sock --tun=userspace-networking &
+    
+    # Wait for tailscaled to be ready
+    sleep 2
+    echo "[*] Tailscale daemon started"
+}
+
 # Build a single Docker image
 build_image() {
     local node_type="$1"
@@ -53,6 +67,9 @@ build_all_images() {
     touch "$IMAGES_BUILT_FLAG"
     echo "[*] All images processed!"
 }
+
+# Start Tailscale daemon
+start_tailscaled
 
 # Main startup logic
 if [ ! -f "$IMAGES_BUILT_FLAG" ]; then
