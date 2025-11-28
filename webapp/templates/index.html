@@ -53,6 +53,7 @@
         .icon-host::before { content: '◫'; color: var(--text-muted-color); }
         .icon-play::before { content: '▶'; color: var(--success-color); font-size: 12px; }
         .icon-stop::before { content: '■'; color: var(--danger-color); font-size: 12px; }
+        .icon-kill::before { content: '⚡'; color: var(--danger-color); font-size: 12px; }
         .icon-restart::before { content: '↻'; color: var(--primary-color); }
         .icon-refresh::before { content: '↻'; color: var(--text-muted-color); }
         .icon-export::before { content: '↓'; color: var(--primary-color); }
@@ -550,6 +551,7 @@
                     <span id="selected-count" style="font-size: 14px; color: var(--text-muted-color);">0 selected</span>
                     <button onclick="bulkStartContainers()" class="btn btn-primary btn-sm"><span class="icon-play"></span> Start Selected</button>
                     <button onclick="bulkStopContainers()" class="btn btn-secondary btn-sm"><span class="icon-stop"></span> Stop Selected</button>
+                    <button onclick="bulkKillContainers()" class="btn btn-danger btn-sm"><span class="icon-kill"></span> Kill Selected</button>
                     <button onclick="bulkRestartContainers()" class="btn btn-secondary btn-sm"><span class="icon-restart"></span> Restart Selected</button>
                     <button onclick="bulkRemoveContainers()" class="btn btn-danger btn-sm"><span class="icon-remove"></span> Remove Selected</button>
                     <button onclick="clearSelection()" class="btn btn-secondary btn-sm">Clear Selection</button>
@@ -964,7 +966,7 @@
                                             ${canEdit ? (
                                                 c.status !== 'running' && c.status !== 'expired' ? 
                                                     `<button onclick="startExistingContainer('${c.host_id}', '${c.id}')" class="btn btn-primary btn-sm"><span class="icon-play"></span> Start</button>` : 
-                                                    c.status === 'running' ? `<button onclick="stopContainer('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm"><span class="icon-stop"></span> Stop</button>` : ''
+                                                    c.status === 'running' ? `<button onclick="stopContainer('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm"><span class="icon-stop"></span> Stop</button><button onclick="killContainer('${c.host_id}', '${c.id}')" class="btn btn-danger btn-sm"><span class="icon-kill"></span> Kill</button>` : ''
                                             ) : ''}
                                             ${canEdit && c.status !== 'expired' ? `<button onclick="restartContainer('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm"><span class="icon-restart"></span> Restart</button>` : ''}
                                             ${canEdit ? `<button onclick="showEditExpiration('${c.host_id}', '${c.id}', '${c.name}', '${c.expiration_date || ''}')" class="btn btn-secondary btn-sm"><span class="icon-edit"></span> Edit</button>` : ''}
@@ -1115,6 +1117,10 @@
             executeBulkAction('Stopped', 'stop', 'POST', `Stop ${selectedContainers.size} container(s)?`);
         }
         
+        function bulkKillContainers() {
+            executeBulkAction('Killed', 'kill', 'POST', `Kill ${selectedContainers.size} container(s)? This will forcefully terminate them immediately.`);
+        }
+        
         function bulkRestartContainers() {
             executeBulkAction('Restarted', 'restart', 'POST', `Restart ${selectedContainers.size} container(s)?`);
         }
@@ -1242,6 +1248,22 @@
                 const data = await response.json();
                 if (response.ok) {
                     showAlert('Container stopped', 'success');
+                    refreshContainers();
+                } else {
+                    showAlert('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error: ' + error.message, 'error');
+            }
+        }
+        
+        async function killContainer(hostId, containerId) {
+            if (!confirm('Kill this container? This will forcefully terminate the container immediately.')) return;
+            try {
+                const response = await fetch(`/api/containers/${hostId}/${containerId}/kill`, { method: 'POST' });
+                const data = await response.json();
+                if (response.ok) {
+                    showAlert('Container killed', 'success');
                     refreshContainers();
                 } else {
                     showAlert('Error: ' + data.error, 'error');
