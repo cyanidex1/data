@@ -2,7 +2,7 @@
 
 A web-based control panel for managing Docker containers running Datagram nodes across multiple Docker hosts.
 
-![Control Panel Screenshot](https://github.com/user-attachments/assets/87489b65-e330-411d-ab3b-15f8a3e1b131)
+![Control Panel Screenshot](https://github.com/user-attachments/assets/56856c2c-0b96-4104-ad49-869eaf15f998)
 
 ## ⚡ Quick Start (One-Liner)
 
