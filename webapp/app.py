@@ -1118,27 +1118,25 @@ def start_container():
     env_vars['NODE_TYPE'] = node_type
     
     try:
-        # Check if container with this name already exists
-        # For datagram nodes, duplicate keys are not allowed
-        # For other node types (email/password based), allow duplicates with unique names
-        try:
-            existing = client.containers.get(container_name)
-            if node_type == 'datagram':
-                # Datagram nodes cannot have duplicate keys
+        # For datagram nodes, check if container already exists (no duplicates allowed)
+        # For non-datagram nodes, always add numbering to allow multiple instances
+        if node_type == 'datagram':
+            try:
+                existing = client.containers.get(container_name)
                 return jsonify({'error': f'Container with name "{container_name}" already exists'}), 400
-            else:
-                # For non-datagram nodes, find a unique name by appending a number
-                base_name = container_name
-                counter = 1
-                while True:
-                    container_name = f'{base_name}-{counter}'
-                    try:
-                        client.containers.get(container_name)
-                        counter += 1
-                    except docker.errors.NotFound:
-                        break
-        except docker.errors.NotFound:
-            pass
+            except docker.errors.NotFound:
+                pass
+        else:
+            # For non-datagram nodes, always add numbering (-1, -2, -3, etc.)
+            base_name = container_name
+            counter = 1
+            while True:
+                container_name = f'{base_name}-{counter}'
+                try:
+                    client.containers.get(container_name)
+                    counter += 1
+                except docker.errors.NotFound:
+                    break
         
         # Check if image exists
         image_name = node_config['image']
@@ -1652,22 +1650,17 @@ def import_keys():
             container_name = re.sub(r'[^a-zA-Z0-9_.-]', '-', container_name)
             container_name = re.sub(r'-+', '-', container_name).strip('-')
             
-            # For non-datagram nodes, check if container name exists and find unique name
+            # For non-datagram nodes, always add numbering (-1, -2, -3, etc.)
             if node_config['auth_type'] != 'api_key':
-                try:
-                    client.containers.get(container_name)
-                    # Container exists, find a unique name
-                    base_name = container_name
-                    counter = 1
-                    while True:
-                        container_name = f'{base_name}-{counter}'
-                        try:
-                            client.containers.get(container_name)
-                            counter += 1
-                        except docker.errors.NotFound:
-                            break
-                except docker.errors.NotFound:
-                    pass  # Container name is unique
+                base_name = container_name
+                counter = 1
+                while True:
+                    container_name = f'{base_name}-{counter}'
+                    try:
+                        client.containers.get(container_name)
+                        counter += 1
+                    except docker.errors.NotFound:
+                        break
             
             if expiration and expiration != 'N/A':
                 try:
