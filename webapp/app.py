@@ -877,6 +877,13 @@ def favicon():
                                'favicon.png', mimetype='image/png')
 
 
+@app.route('/favicon.png')
+def favicon_png():
+    """Serve favicon.png from static folder"""
+    return send_from_directory(os.path.join(app.root_path, 'static'),
+                               'favicon.png', mimetype='image/png')
+
+
 @app.route('/api/hosts', methods=['GET'])
 @login_required
 def list_hosts():
@@ -1219,6 +1226,11 @@ def stop_container(host_id, container_id):
             return jsonify({'error': 'Could not connect to Docker host'}), 500
         
         container = client.containers.get(container_id)
+        
+        # Prevent stopping the control panel's own container
+        if container.name == 'datagram-control-panel':
+            return jsonify({'error': 'Cannot stop the control panel container'}), 403
+        
         container.stop()
         return jsonify({'success': True})
     except Exception as e:
@@ -1255,6 +1267,11 @@ def kill_container(host_id, container_id):
             return jsonify({'error': 'Could not connect to Docker host'}), 500
         
         container = client.containers.get(container_id)
+        
+        # Prevent killing the control panel's own container
+        if container.name == 'datagram-control-panel':
+            return jsonify({'error': 'Cannot kill the control panel container'}), 403
+        
         container.kill()
         return jsonify({'success': True})
     except Exception as e:
@@ -1273,6 +1290,11 @@ def remove_container(host_id, container_id):
             return jsonify({'error': 'Could not connect to Docker host'}), 500
         
         container = client.containers.get(container_id)
+        
+        # Prevent removing the control panel's own container
+        if container.name == 'datagram-control-panel':
+            return jsonify({'error': 'Cannot remove the control panel container'}), 403
+        
         container.remove(force=True)
         return jsonify({'success': True})
     except Exception as e:
@@ -1611,27 +1633,44 @@ def import_keys():
             
             # Check if container with same credentials already exists
             # For datagram nodes (api_key type): skip if any container with same key exists
-            # For non-datagram nodes: allow multiple instances, find_unique_container_name handles numbering
+            # For non-datagram nodes: skip if any running container with same email and node_type exists
             exists = False
-            if node_config['auth_type'] == 'api_key':
-                try:
-                    containers = client.containers.list(all=True)
-                    for c in containers:
-                        env_vars = c.attrs.get('Config', {}).get('Env', [])
-                        for env in env_vars:
+            existing_container_name = None
+            try:
+                containers = client.containers.list(all=True)
+                for c in containers:
+                    c_env_vars = c.attrs.get('Config', {}).get('Env', [])
+                    if node_config['auth_type'] == 'api_key':
+                        # Check for matching LICENSE_KEY
+                        for env in c_env_vars:
                             if env.startswith('LICENSE_KEY=') and env.split('=', 1)[1] == key:
                                 exists = True
+                                existing_container_name = c.name
                                 break
-                        if exists:
+                    else:
+                        # Check for matching NODE_EMAIL and NODE_TYPE (for non-datagram nodes)
+                        c_email = None
+                        c_node_type = None
+                        for env in c_env_vars:
+                            if env.startswith('NODE_EMAIL='):
+                                c_email = env.split('=', 1)[1]
+                            elif env.startswith('NODE_TYPE='):
+                                c_node_type = env.split('=', 1)[1]
+                        # Skip if same email and node_type already exists
+                        if c_email == email and c_node_type == node_type:
+                            exists = True
+                            existing_container_name = c.name
                             break
-                except:
-                    pass
+                    if exists:
+                        break
+            except:
+                pass
             
             if exists:
                 results['skipped'].append({
                     'row': row_num,
                     'identifier': key or email,
-                    'reason': f'Container with this key already exists for {node_type}'
+                    'reason': f'Container with these credentials already exists ({existing_container_name}) for {node_type}'
                 })
                 continue
             
