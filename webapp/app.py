@@ -1611,9 +1611,8 @@ def import_keys():
             
             # Check if container with same credentials already exists
             # For datagram nodes (api_key type): skip if any container with same key exists
-            # For non-datagram nodes: skip if a RUNNING container with same email+node_type exists
+            # For non-datagram nodes: allow multiple instances, find_unique_container_name handles numbering
             exists = False
-            existing_status = None
             if node_config['auth_type'] == 'api_key':
                 try:
                     containers = client.containers.list(all=True)
@@ -1622,29 +1621,8 @@ def import_keys():
                         for env in env_vars:
                             if env.startswith('LICENSE_KEY=') and env.split('=', 1)[1] == key:
                                 exists = True
-                                existing_status = c.status
                                 break
                         if exists:
-                            break
-                except:
-                    pass
-            else:
-                # For non-datagram nodes, check if a RUNNING container exists with same email and node_type
-                try:
-                    containers = client.containers.list(all=True)
-                    for c in containers:
-                        env_vars = c.attrs.get('Config', {}).get('Env', [])
-                        container_email = None
-                        container_node_type = None
-                        for env in env_vars:
-                            if env.startswith('NODE_EMAIL='):
-                                container_email = env.split('=', 1)[1]
-                            elif env.startswith('NODE_TYPE='):
-                                container_node_type = env.split('=', 1)[1]
-                        # Only skip if container is running with same email and node_type
-                        if container_email == email and container_node_type == node_type and c.status == 'running':
-                            exists = True
-                            existing_status = c.status
                             break
                 except:
                     pass
@@ -1653,7 +1631,7 @@ def import_keys():
                 results['skipped'].append({
                     'row': row_num,
                     'identifier': key or email,
-                    'reason': f'Container with this {"key" if key else "email"} already {"exists" if node_config["auth_type"] == "api_key" else "running"} for {node_type}'
+                    'reason': f'Container with this key already exists for {node_type}'
                 })
                 continue
             
