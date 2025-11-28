@@ -870,18 +870,22 @@ def index():
                          is_admin=current_user.is_admin())
 
 
+def _serve_favicon():
+    """Helper function to serve favicon from static folder"""
+    return send_from_directory(os.path.join(app.root_path, 'static'),
+                               'favicon.png', mimetype='image/png')
+
+
 @app.route('/favicon.ico')
 def favicon():
     """Serve favicon.ico from static folder"""
-    return send_from_directory(os.path.join(app.root_path, 'static'),
-                               'favicon.png', mimetype='image/png')
+    return _serve_favicon()
 
 
 @app.route('/favicon.png')
 def favicon_png():
     """Serve favicon.png from static folder"""
-    return send_from_directory(os.path.join(app.root_path, 'static'),
-                               'favicon.png', mimetype='image/png')
+    return _serve_favicon()
 
 
 @app.route('/api/hosts', methods=['GET'])
@@ -1670,7 +1674,7 @@ def import_keys():
                 results['skipped'].append({
                     'row': row_num,
                     'identifier': key or email,
-                    'reason': f'Container with these credentials already exists ({existing_container_name}) for {node_type}'
+                    'reason': f'Container with these credentials already exists ({existing_container_name or "unknown"}) for {node_type}'
                 })
                 continue
             
