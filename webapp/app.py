@@ -151,6 +151,35 @@ def is_past_removal_date(expiration_date_str, days=7):
         return False
 
 
+def find_unique_container_name(client, base_name):
+    """
+    Find a unique container name by appending a number suffix.
+    If the base_name already ends with a number suffix (e.g., 'element-user-1'),
+    it strips the existing number and finds the next available number.
+    
+    Args:
+        client: Docker client instance
+        base_name: Base container name (e.g., 'element-user' or 'element-user-1')
+    
+    Returns:
+        str: Unique container name (e.g., 'element-user-1', 'element-user-2')
+    """
+    # Strip existing number suffix if present (e.g., 'element-user-1' -> 'element-user')
+    # Match pattern: name ending with -<number>
+    match = re.match(r'^(.+)-(\d+)$', base_name)
+    if match:
+        base_name = match.group(1)  # Use the part before the number
+    
+    counter = 1
+    while True:
+        container_name = f'{base_name}-{counter}'
+        try:
+            client.containers.get(container_name)
+            counter += 1
+        except docker.errors.NotFound:
+            return container_name
+
+
 class User(UserMixin):
     """User model for authentication"""
     
@@ -841,6 +870,13 @@ def index():
                          is_admin=current_user.is_admin())
 
 
+@app.route('/favicon.ico')
+def favicon():
+    """Serve favicon.ico from static folder"""
+    return send_from_directory(os.path.join(app.root_path, 'static'),
+                               'favicon.png', mimetype='image/png')
+
+
 @app.route('/api/hosts', methods=['GET'])
 @login_required
 def list_hosts():
@@ -1111,12 +1147,17 @@ def start_container():
     env_vars['NODE_TYPE'] = node_type
     
     try:
-        # Check if container with this name already exists
-        try:
-            existing = client.containers.get(container_name)
-            return jsonify({'error': f'Container with name "{container_name}" already exists'}), 400
-        except docker.errors.NotFound:
-            pass
+        # For api_key nodes (datagram), check if container already exists (no duplicates allowed)
+        # For email/password nodes, always add numbering to allow multiple instances
+        if node_config['auth_type'] == 'api_key':
+            try:
+                existing = client.containers.get(container_name)
+                return jsonify({'error': f'Container with name "{container_name}" already exists'}), 400
+            except docker.errors.NotFound:
+                pass
+        else:
+            # For non-datagram nodes, always add numbering (-1, -2, -3, etc.)
+            container_name = find_unique_container_name(client, container_name)
         
         # Check if image exists
         image_name = node_config['image']
@@ -1569,35 +1610,28 @@ def import_keys():
                 continue
             
             # Check if container with same credentials already exists
+            # For datagram nodes (api_key type): skip if any container with same key exists
+            # For non-datagram nodes: allow multiple instances, find_unique_container_name handles numbering
             exists = False
-            try:
-                containers = client.containers.list(all=True)
-                for c in containers:
-                    env_vars = c.attrs.get('Config', {}).get('Env', [])
-                    for env in env_vars:
-                        if node_config['auth_type'] == 'api_key':
+            if node_config['auth_type'] == 'api_key':
+                try:
+                    containers = client.containers.list(all=True)
+                    for c in containers:
+                        env_vars = c.attrs.get('Config', {}).get('Env', [])
+                        for env in env_vars:
                             if env.startswith('LICENSE_KEY=') and env.split('=', 1)[1] == key:
                                 exists = True
                                 break
-                        else:
-                            if env.startswith('NODE_EMAIL=') and env.split('=', 1)[1] == email:
-                                # Check node type too
-                                for env2 in env_vars:
-                                    if env2.startswith('NODE_TYPE=') and env2.split('=', 1)[1] == node_type:
-                                        exists = True
-                                        break
-                                if exists:
-                                    break
-                    if exists:
-                        break
-            except:
-                pass
+                        if exists:
+                            break
+                except:
+                    pass
             
             if exists:
                 results['skipped'].append({
                     'row': row_num,
                     'identifier': key or email,
-                    'reason': f'Container with this {"key" if key else "email"} already exists for {node_type}'
+                    'reason': f'Container with this key already exists for {node_type}'
                 })
                 continue
             
@@ -1636,6 +1670,10 @@ def import_keys():
             # Sanitize container name
             container_name = re.sub(r'[^a-zA-Z0-9_.-]', '-', container_name)
             container_name = re.sub(r'-+', '-', container_name).strip('-')
+            
+            # For non-datagram nodes (email/password auth), always add numbering (-1, -2, -3, etc.)
+            if node_config['auth_type'] != 'api_key':
+                container_name = find_unique_container_name(client, container_name)
             
             if expiration and expiration != 'N/A':
                 try:
