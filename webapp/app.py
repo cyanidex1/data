@@ -870,11 +870,22 @@ def index():
                          is_admin=current_user.is_admin())
 
 
+def _serve_favicon():
+    """Helper function to serve favicon from static folder"""
+    return send_from_directory(os.path.join(app.root_path, 'static'),
+                               'favicon.png', mimetype='image/png')
+
+
 @app.route('/favicon.ico')
 def favicon():
     """Serve favicon.ico from static folder"""
-    return send_from_directory(os.path.join(app.root_path, 'static'),
-                               'favicon.png', mimetype='image/png')
+    return _serve_favicon()
+
+
+@app.route('/favicon.png')
+def favicon_png():
+    """Serve favicon.png from static folder"""
+    return _serve_favicon()
 
 
 @app.route('/api/hosts', methods=['GET'])
@@ -1219,6 +1230,11 @@ def stop_container(host_id, container_id):
             return jsonify({'error': 'Could not connect to Docker host'}), 500
         
         container = client.containers.get(container_id)
+        
+        # Prevent stopping the control panel's own container
+        if container.name == 'datagram-control-panel':
+            return jsonify({'error': 'Cannot stop the control panel container'}), 403
+        
         container.stop()
         return jsonify({'success': True})
     except Exception as e:
@@ -1255,6 +1271,11 @@ def kill_container(host_id, container_id):
             return jsonify({'error': 'Could not connect to Docker host'}), 500
         
         container = client.containers.get(container_id)
+        
+        # Prevent killing the control panel's own container
+        if container.name == 'datagram-control-panel':
+            return jsonify({'error': 'Cannot kill the control panel container'}), 403
+        
         container.kill()
         return jsonify({'success': True})
     except Exception as e:
@@ -1273,6 +1294,11 @@ def remove_container(host_id, container_id):
             return jsonify({'error': 'Could not connect to Docker host'}), 500
         
         container = client.containers.get(container_id)
+        
+        # Prevent removing the control panel's own container
+        if container.name == 'datagram-control-panel':
+            return jsonify({'error': 'Cannot remove the control panel container'}), 403
+        
         container.remove(force=True)
         return jsonify({'success': True})
     except Exception as e:
@@ -1611,27 +1637,37 @@ def import_keys():
             
             # Check if container with same credentials already exists
             # For datagram nodes (api_key type): skip if any container with same key exists
-            # For non-datagram nodes: allow multiple instances, find_unique_container_name handles numbering
+            # For non-datagram nodes: skip if container with same name from CSV already exists
             exists = False
-            if node_config['auth_type'] == 'api_key':
-                try:
-                    containers = client.containers.list(all=True)
-                    for c in containers:
-                        env_vars = c.attrs.get('Config', {}).get('Env', [])
-                        for env in env_vars:
+            existing_container_name = None
+            try:
+                containers = client.containers.list(all=True)
+                for c in containers:
+                    if node_config['auth_type'] == 'api_key':
+                        # Check for matching LICENSE_KEY
+                        c_env_vars = c.attrs.get('Config', {}).get('Env', [])
+                        for env in c_env_vars:
                             if env.startswith('LICENSE_KEY=') and env.split('=', 1)[1] == key:
                                 exists = True
+                                existing_container_name = c.name
                                 break
-                        if exists:
+                    else:
+                        # For non-datagram nodes: check if container with same name exists
+                        # Use the container name from CSV if provided
+                        if container_name and c.name == container_name:
+                            exists = True
+                            existing_container_name = c.name
                             break
-                except:
-                    pass
+                    if exists:
+                        break
+            except (docker.errors.DockerException, docker.errors.APIError):
+                pass  # Ignore Docker errors during duplicate check
             
             if exists:
                 results['skipped'].append({
                     'row': row_num,
                     'identifier': key or email,
-                    'reason': f'Container with this key already exists for {node_type}'
+                    'reason': f'Container already exists ({existing_container_name or "unknown"}) for {node_type}'
                 })
                 continue
             
@@ -1666,14 +1702,12 @@ def import_keys():
                     email_prefix = re.sub(r'[^a-zA-Z0-9]', '-', email_prefix).lower()
                     email_prefix = re.sub(r'-+', '-', email_prefix).strip('-')
                     container_name = f'{node_type}-{email_prefix}'
+                    # For non-datagram nodes without explicit container name, add numbering (-1, -2, -3, etc.)
+                    container_name = find_unique_container_name(client, container_name)
             
             # Sanitize container name
             container_name = re.sub(r'[^a-zA-Z0-9_.-]', '-', container_name)
             container_name = re.sub(r'-+', '-', container_name).strip('-')
-            
-            # For non-datagram nodes (email/password auth), always add numbering (-1, -2, -3, etc.)
-            if node_config['auth_type'] != 'api_key':
-                container_name = find_unique_container_name(client, container_name)
             
             if expiration and expiration != 'N/A':
                 try:
