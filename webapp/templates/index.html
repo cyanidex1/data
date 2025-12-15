@@ -553,6 +553,7 @@
                     <button onclick="bulkStopContainers()" class="btn btn-secondary btn-sm"><span class="icon-stop"></span> Stop Selected</button>
                     <button onclick="bulkKillContainers()" class="btn btn-danger btn-sm"><span class="icon-kill"></span> Kill Selected</button>
                     <button onclick="bulkRestartContainers()" class="btn btn-secondary btn-sm"><span class="icon-restart"></span> Restart Selected</button>
+                    <button onclick="showBulkEditExpiration()" class="btn btn-secondary btn-sm"><span class="icon-edit"></span> Edit Expiration</button>
                     <button onclick="bulkRemoveContainers()" class="btn btn-danger btn-sm"><span class="icon-remove"></span> Remove Selected</button>
                     <button onclick="clearSelection()" class="btn btn-secondary btn-sm">Clear Selection</button>
                 </div>
@@ -656,6 +657,35 @@
             <div class="modal-footer">
                 <button onclick="closeEditExpirationModal()" class="btn btn-secondary">Cancel</button>
                 <button onclick="saveExpiration()" class="btn btn-primary">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Edit Expiration Modal -->
+    <div id="bulk-edit-expiration-modal" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header"><span class="icon-edit"></span> Bulk Edit Expiration Date</div>
+            <div class="modal-body">
+                <p style="margin-bottom: 16px; color: var(--text-muted-color);">
+                    Editing expiration for <strong id="bulk-edit-count">0</strong> selected container(s).
+                </p>
+                <div class="form-group">
+                    <label for="bulk-expiration-input">New Expiration Date</label>
+                    <input type="datetime-local" id="bulk-expiration-input">
+                    <div class="help-text">Leave empty to remove expiration (never expire). Each selected container will be recreated with the new expiration date.</div>
+                </div>
+                <div id="bulk-edit-progress" style="display: none; margin-top: 16px;">
+                    <div style="margin-bottom: 8px; color: var(--text-muted-color);">
+                        <span id="bulk-edit-current">0</span> / <span id="bulk-edit-total">0</span> completed
+                    </div>
+                    <div style="width: 100%; background: var(--border-color); height: 4px; border-radius: 2px; overflow: hidden;">
+                        <div id="bulk-edit-progress-bar" style="width: 0%; background: var(--primary-color); height: 100%; transition: width 0.3s;"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="bulk-edit-cancel-btn" onclick="closeBulkEditExpirationModal()" class="btn btn-secondary">Cancel</button>
+                <button id="bulk-edit-save-btn" onclick="saveBulkExpiration()" class="btn btn-primary">Update All</button>
             </div>
         </div>
     </div>
@@ -1138,6 +1168,90 @@
             executeBulkAction('Removed', 'remove', 'DELETE', `Remove ${selectedContainers.size} container(s)? This action cannot be undone.`);
         }
         
+        function showBulkEditExpiration() {
+            const modal = document.getElementById('bulk-edit-expiration-modal');
+            const count = selectedContainers.size;
+            document.getElementById('bulk-edit-count').textContent = count;
+            document.getElementById('bulk-expiration-input').value = '';
+            
+            // Hide progress, show buttons
+            document.getElementById('bulk-edit-progress').style.display = 'none';
+            document.getElementById('bulk-edit-cancel-btn').style.display = 'inline-block';
+            document.getElementById('bulk-edit-save-btn').style.display = 'inline-block';
+            
+            modal.classList.add('active');
+        }
+        
+        function closeBulkEditExpirationModal() {
+            document.getElementById('bulk-edit-expiration-modal').classList.remove('active');
+        }
+        
+        async function saveBulkExpiration() {
+            const expirationInput = document.getElementById('bulk-expiration-input');
+            let expirationDate = null;
+            
+            if (expirationInput.value) {
+                expirationDate = new Date(expirationInput.value).toISOString();
+            }
+            
+            // Show progress bar
+            const progressDiv = document.getElementById('bulk-edit-progress');
+            const progressBar = document.getElementById('bulk-edit-progress-bar');
+            const currentSpan = document.getElementById('bulk-edit-current');
+            const totalSpan = document.getElementById('bulk-edit-total');
+            
+            progressDiv.style.display = 'block';
+            document.getElementById('bulk-edit-cancel-btn').style.display = 'none';
+            document.getElementById('bulk-edit-save-btn').disabled = true;
+            
+            const keys = Array.from(selectedContainers);
+            const total = keys.length;
+            let completed = 0;
+            let successCount = 0;
+            let failCount = 0;
+            
+            totalSpan.textContent = total;
+            currentSpan.textContent = completed;
+            progressBar.style.width = '0%';
+            
+            for (const key of keys) {
+                const [hostId, containerId] = key.split(':');
+                try {
+                    const response = await fetch(`/api/containers/${hostId}/${containerId}/update-expiration`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ expiration_date: expirationDate })
+                    });
+                    
+                    if (response.ok) {
+                        successCount++;
+                    } else {
+                        failCount++;
+                    }
+                } catch (error) {
+                    failCount++;
+                }
+                
+                completed++;
+                currentSpan.textContent = completed;
+                progressBar.style.width = `${(completed / total) * 100}%`;
+            }
+            
+            // Show result and close
+            if (successCount > 0) {
+                const action = expirationDate ? 'Updated expiration for' : 'Removed expiration from';
+                showAlert(`${action} ${successCount} container(s)${failCount > 0 ? `, ${failCount} failed` : ''}`, 'success');
+            } else if (failCount > 0) {
+                showAlert(`Failed to update ${failCount} container(s)`, 'error');
+            }
+            
+            // Reset state
+            document.getElementById('bulk-edit-save-btn').disabled = false;
+            closeBulkEditExpirationModal();
+            clearSelection();
+            refreshContainers();
+        }
+        
         function filterContainers() {
             renderContainers(getDisplayedContainers());
         }
@@ -1515,9 +1629,11 @@
             const logsModal = document.getElementById('logs-modal');
             const statsModal = document.getElementById('stats-modal');
             const editExpirationModal = document.getElementById('edit-expiration-modal');
+            const bulkEditExpirationModal = document.getElementById('bulk-edit-expiration-modal');
             if (event.target === logsModal) closeLogsModal();
             if (event.target === statsModal) closeStatsModal();
             if (event.target === editExpirationModal) closeEditExpirationModal();
+            if (event.target === bulkEditExpirationModal) closeBulkEditExpirationModal();
         }
     </script>
 </body>
