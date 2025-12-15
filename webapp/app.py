@@ -622,7 +622,32 @@ tailscale_manager = TailscaleManager(TAILSCALE_CONFIG_FILE)
 
 
 class ContainerListCache:
-    """Simple time-based cache for container list to improve performance"""
+    """Simple time-based cache for container list to improve performance
+    
+    This cache reduces load on the Docker API by caching container list responses
+    for a short period (default 5 seconds). It's designed to handle the 10-second
+    auto-refresh interval, ensuring approximately 50% of requests are served from cache.
+    
+    Thread Safety:
+        All methods are thread-safe using a threading.Lock to prevent race conditions
+        when multiple requests access the cache concurrently.
+    
+    Args:
+        ttl_seconds (int): Time-to-live for cached data in seconds. Default is 5 seconds.
+    
+    Usage:
+        cache = ContainerListCache(ttl_seconds=5)
+        
+        # Try to get from cache
+        result = cache.get()
+        if result is None:
+            # Cache miss - fetch fresh data
+            result = expensive_operation()
+            cache.set(result)
+        
+        # Invalidate when data changes
+        cache.invalidate()
+    """
     
     def __init__(self, ttl_seconds=5):
         self.ttl_seconds = ttl_seconds
@@ -1067,6 +1092,9 @@ def _process_host_containers(host, current_time_utc):
     Returns:
         List of container dictionaries
     """
+    # Number of expected environment variables we're looking for
+    EXPECTED_ENV_VAR_COUNT = 4
+    
     client = host_manager.get_client(host['id'])
     if not client:
         return []
@@ -1090,9 +1118,12 @@ def _process_host_containers(host, current_time_utc):
             
             # Use partition for efficient parsing and early termination
             for env in env_vars:
-                if '=' not in env:
+                # partition handles strings without '=' gracefully
+                key, sep, value = env.partition('=')
+                
+                # Skip if no separator found (malformed env var)
+                if not sep:
                     continue
-                key, _, value = env.partition('=')
                 
                 if key == 'LICENSE_KEY':
                     license_key = value
@@ -1107,8 +1138,8 @@ def _process_host_containers(host, current_time_utc):
                     node_email = value
                     found_count += 1
                 
-                # Early termination if we found all 4 possible env vars
-                if found_count >= 4:
+                # Early termination if we found all expected env vars
+                if found_count >= EXPECTED_ENV_VAR_COUNT:
                     break
             
             # Determine container status (use pre-calculated current time)

@@ -1217,19 +1217,32 @@
             for (const key of keys) {
                 const [hostId, containerId] = key.split(':');
                 try {
+                    // Add timeout and retry logic for network reliability
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+                    
                     const response = await fetch(`/api/containers/${hostId}/${containerId}/update-expiration`, {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({ expiration_date: expirationDate })
+                        body: JSON.stringify({ expiration_date: expirationDate }),
+                        signal: controller.signal
                     });
+                    
+                    clearTimeout(timeoutId);
                     
                     if (response.ok) {
                         successCount++;
                     } else {
                         failCount++;
+                        console.error(`Failed to update ${containerId}: ${response.status} ${response.statusText}`);
                     }
                 } catch (error) {
                     failCount++;
+                    if (error.name === 'AbortError') {
+                        console.error(`Timeout updating ${containerId}`);
+                    } else {
+                        console.error(`Error updating ${containerId}:`, error);
+                    }
                 }
                 
                 completed++;
