@@ -36,6 +36,9 @@ USERS_FILE = os.path.join(DATA_DIR, 'users.json')
 TAILSCALE_CONFIG_FILE = os.path.join(DATA_DIR, 'tailscale_config.json')
 DEFAULT_IMAGE = 'datagram'
 
+# Performance constants
+EXPECTED_ENV_VAR_COUNT = 4  # Number of environment variables we look for in containers
+
 # Node type configurations
 NODE_TYPES = {
     'datagram': {
@@ -1092,9 +1095,6 @@ def _process_host_containers(host, current_time_utc):
     Returns:
         List of container dictionaries
     """
-    # Number of expected environment variables we're looking for
-    EXPECTED_ENV_VAR_COUNT = 4
-    
     client = host_manager.get_client(host['id'])
     if not client:
         return []
@@ -1142,24 +1142,16 @@ def _process_host_containers(host, current_time_utc):
                 if found_count >= EXPECTED_ENV_VAR_COUNT:
                     break
             
-            # Determine container status (use pre-calculated current time)
+            # Determine container status using is_expired helper
             status = container.status
-            if expiration_date:
-                try:
-                    exp_dt = datetime.fromisoformat(expiration_date.replace('Z', '+00:00'))
-                    if exp_dt.tzinfo is not None:
-                        now = current_time_utc
-                    else:
-                        now = datetime.now()
-                    if now > exp_dt:
-                        status = 'expired'
-                except (ValueError, TypeError):
-                    pass  # Keep original status if expiration date is invalid
+            if expiration_date and is_expired(expiration_date):
+                status = 'expired'
             
             # Get image name efficiently
             try:
                 image_name = container.image.tags[0] if container.image.tags else container.image.id[:12]
-            except (AttributeError, IndexError):
+            except AttributeError:
+                # Only AttributeError is possible if container.image is None
                 image_name = 'unknown'
             
             host_containers.append({

@@ -697,6 +697,9 @@
         let selectedContainers = new Set(); // Store selected container keys (host_id:container_id)
         const canEdit = {{ 'true' if can_edit else 'false' }};
         
+        // Configuration constants
+        const BULK_OPERATION_TIMEOUT_MS = 30000; // 30 seconds timeout for bulk operations
+        
         document.addEventListener('DOMContentLoaded', function() {
             loadHosts();
             loadNodeTypes();
@@ -1217,9 +1220,9 @@
             for (const key of keys) {
                 const [hostId, containerId] = key.split(':');
                 try {
-                    // Add timeout and retry logic for network reliability
+                    // Add timeout for network reliability
                     const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+                    const timeoutId = setTimeout(() => controller.abort(), BULK_OPERATION_TIMEOUT_MS);
                     
                     const response = await fetch(`/api/containers/${hostId}/${containerId}/update-expiration`, {
                         method: 'POST',
@@ -1251,18 +1254,23 @@
             }
             
             // Show result and close
-            if (successCount > 0) {
-                const action = expirationDate ? 'Updated expiration for' : 'Removed expiration from';
-                showAlert(`${action} ${successCount} container(s)${failCount > 0 ? `, ${failCount} failed` : ''}`, 'success');
-            } else if (failCount > 0) {
-                showAlert(`Failed to update ${failCount} container(s)`, 'error');
-            }
+            showBulkOperationResult(successCount, failCount, expirationDate);
             
             // Reset state
             document.getElementById('bulk-edit-save-btn').disabled = false;
             closeBulkEditExpirationModal();
             clearSelection();
             refreshContainers();
+        }
+        
+        function showBulkOperationResult(successCount, failCount, expirationDate) {
+            if (successCount > 0) {
+                const action = expirationDate ? 'Updated expiration for' : 'Removed expiration from';
+                const failureNote = failCount > 0 ? `, ${failCount} failed` : '';
+                showAlert(`${action} ${successCount} container(s)${failureNote}`, 'success');
+            } else if (failCount > 0) {
+                showAlert(`Failed to update ${failCount} container(s)`, 'error');
+            }
         }
         
         function filterContainers() {
