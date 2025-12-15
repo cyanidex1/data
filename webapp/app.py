@@ -17,6 +17,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from io import StringIO
 import csv
+from functools import lru_cache
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
@@ -618,6 +619,45 @@ class TailscaleManager:
 # Initialize Tailscale manager
 tailscale_manager = TailscaleManager(TAILSCALE_CONFIG_FILE)
 
+
+class ContainerListCache:
+    """Simple time-based cache for container list to improve performance"""
+    
+    def __init__(self, ttl_seconds=5):
+        self.ttl_seconds = ttl_seconds
+        self._cache = None
+        self._cache_time = None
+        self._lock = threading.Lock()
+    
+    def get(self):
+        """Get cached container list if still valid"""
+        with self._lock:
+            if self._cache is None or self._cache_time is None:
+                return None
+            
+            age = time.time() - self._cache_time
+            if age > self.ttl_seconds:
+                return None
+            
+            return self._cache
+    
+    def set(self, containers):
+        """Set container list in cache"""
+        with self._lock:
+            self._cache = containers
+            self._cache_time = time.time()
+    
+    def invalidate(self):
+        """Invalidate the cache"""
+        with self._lock:
+            self._cache = None
+            self._cache_time = None
+
+
+# Initialize container cache with 5-second TTL
+container_cache = ContainerListCache(ttl_seconds=5)
+
+
 # Attempt auto-connect to Tailscale if auth key is saved
 def _try_tailscale_auto_connect():
     """Try to auto-connect to Tailscale on startup"""
@@ -1019,9 +1059,20 @@ def tailscale_logout():
 @app.route('/api/containers', methods=['GET'])
 @login_required
 def list_containers():
-    """List all containers across all hosts - requires view permission"""
+    """List all containers across all hosts - requires view permission
+    
+    Performance optimizations:
+    - Uses a 5-second cache to handle concurrent requests efficiently
+    - Fetches containers without sparse mode but with minimal data processing
+    - Efficiently parses environment variables
+    """
     if not current_user.can_view():
         return jsonify({'error': 'View privileges required'}), 403
+    
+    # Check cache first
+    cached_result = container_cache.get()
+    if cached_result is not None:
+        return jsonify({'containers': cached_result, 'cached': True})
     
     all_containers = []
     
@@ -1031,29 +1082,43 @@ def list_containers():
             continue
         
         try:
+            # List all containers - attrs are already loaded in the list response
             containers = client.containers.list(all=True)
+            
             for container in containers:
-                # Get environment variables to extract credentials
+                # Get environment variables directly from attrs (already loaded)
                 env_vars = container.attrs.get('Config', {}).get('Env', [])
+                
+                # Parse environment variables efficiently with early termination
                 license_key = None
                 expiration_date = None
                 node_type = None
                 node_email = None
                 
+                # Use dictionary to avoid multiple string comparisons
                 for env in env_vars:
-                    if env.startswith('LICENSE_KEY='):
-                        license_key = env.split('=', 1)[1]
-                    elif env.startswith('EXPIRATION_DATE='):
-                        expiration_date = env.split('=', 1)[1]
-                    elif env.startswith('NODE_TYPE='):
-                        node_type = env.split('=', 1)[1]
-                    elif env.startswith('NODE_EMAIL='):
-                        node_email = env.split('=', 1)[1]
+                    if '=' not in env:
+                        continue
+                    key, _, value = env.partition('=')
+                    if key == 'LICENSE_KEY':
+                        license_key = value
+                    elif key == 'EXPIRATION_DATE':
+                        expiration_date = value
+                    elif key == 'NODE_TYPE':
+                        node_type = value
+                    elif key == 'NODE_EMAIL':
+                        node_email = value
                 
                 # Determine container status
                 status = container.status
                 if expiration_date and is_expired(expiration_date):
                     status = 'expired'
+                
+                # Get image name efficiently
+                try:
+                    image_name = container.image.tags[0] if container.image.tags else container.image.id[:12]
+                except (AttributeError, IndexError):
+                    image_name = 'unknown'
                 
                 all_containers.append({
                     'host_id': host['id'],
@@ -1061,8 +1126,8 @@ def list_containers():
                     'id': container.id[:12],
                     'name': container.name,
                     'status': status,
-                    'image': container.image.tags[0] if container.image.tags else container.image.id[:12],
-                    'created': container.attrs['Created'],
+                    'image': image_name,
+                    'created': container.attrs.get('Created', ''),
                     'key': license_key,
                     'email': node_email,
                     'node_type': node_type,
@@ -1071,7 +1136,10 @@ def list_containers():
         except Exception as e:
             print(f"Error listing containers on host {host['name']}: {e}")
     
-    return jsonify({'containers': all_containers})
+    # Cache the result
+    container_cache.set(all_containers)
+    
+    return jsonify({'containers': all_containers, 'cached': False})
 
 
 @app.route('/api/containers/start', methods=['POST'])
@@ -1189,6 +1257,9 @@ def start_container():
             memswap_limit='200m'
         )
         
+        # Invalidate cache since a new container was created
+        container_cache.invalidate()
+        
         return jsonify({
             'success': True,
             'container_id': container.id[:12],
@@ -1213,6 +1284,10 @@ def start_existing_container(host_id, container_id):
         
         container = client.containers.get(container_id)
         container.start()
+        
+        # Invalidate cache since container state changed
+        container_cache.invalidate()
+        
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -1236,6 +1311,10 @@ def stop_container(host_id, container_id):
             return jsonify({'error': 'Cannot stop the control panel container'}), 403
         
         container.stop()
+        
+        # Invalidate cache since container state changed
+        container_cache.invalidate()
+        
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -1254,6 +1333,10 @@ def restart_container(host_id, container_id):
         
         container = client.containers.get(container_id)
         container.restart()
+        
+        # Invalidate cache since container state changed
+        container_cache.invalidate()
+        
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -1277,6 +1360,10 @@ def kill_container(host_id, container_id):
             return jsonify({'error': 'Cannot kill the control panel container'}), 403
         
         container.kill()
+        
+        # Invalidate cache since container state changed
+        container_cache.invalidate()
+        
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -1300,6 +1387,10 @@ def remove_container(host_id, container_id):
             return jsonify({'error': 'Cannot remove the control panel container'}), 403
         
         container.remove(force=True)
+        
+        # Invalidate cache since container was removed
+        container_cache.invalidate()
+        
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -1398,6 +1489,9 @@ def update_container_expiration(host_id, container_id):
         # If the original container was not running, stop the new one
         if not was_running:
             new_container.stop()
+        
+        # Invalidate cache since container was recreated
+        container_cache.invalidate()
         
         return jsonify({
             'success': True,
@@ -1742,6 +1836,10 @@ def import_keys():
                     'identifier': key or email,
                     'error': str(e)
                 })
+        
+        # Invalidate cache if any containers were imported
+        if len(results['success']) > 0:
+            container_cache.invalidate()
         
         return jsonify({
             'success': True,
