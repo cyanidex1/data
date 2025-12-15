@@ -33,9 +33,11 @@ That's it! You can now start managing your Datagram nodes through the web interf
 - 📊 **Monitor Containers**: View all running containers across multiple hosts in real-time
 - 🖥️ **Multi-Host Management**: Add and manage multiple Docker hosts from a single interface
 - 🎮 **Container Operations**: Start, stop, restart, kill, and remove containers
-- ✏️ **Edit Expiration**: Modify expiration dates for running and expired containers
+- ✏️ **Edit Expiration**: Modify expiration dates for running and expired containers (individual or bulk)
+- 📦 **Bulk Operations**: Perform actions on multiple selected containers at once (start, stop, kill, restart, edit expiration, remove)
 - 📝 **View Logs**: Check container logs directly from the web interface
 - 🔄 **Auto-Refresh**: Dashboard automatically refreshes every 10 seconds
+- ⚡ **High Performance**: Optimized caching for managing 100+ containers efficiently
 - 🐳 **Docker Integration**: Works seamlessly with the existing `unhealthy.sh` cron job
 - 🔗 **Tailscale VPN**: Connect the control panel to a Tailscale network for secure remote access
 

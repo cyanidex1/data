@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 from io import StringIO
 import csv
 from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
@@ -1056,6 +1057,99 @@ def tailscale_logout():
         return jsonify(result), 400
 
 
+def _process_host_containers(host, current_time_utc):
+    """Process containers for a single host (used for concurrent execution)
+    
+    Args:
+        host: Host configuration dictionary
+        current_time_utc: Current UTC datetime (pre-calculated to avoid repeated calls)
+    
+    Returns:
+        List of container dictionaries
+    """
+    client = host_manager.get_client(host['id'])
+    if not client:
+        return []
+    
+    host_containers = []
+    
+    try:
+        # List all containers - attrs are already loaded in the list response
+        containers = client.containers.list(all=True)
+        
+        for container in containers:
+            # Get environment variables directly from attrs (already loaded)
+            env_vars = container.attrs.get('Config', {}).get('Env', [])
+            
+            # Parse environment variables efficiently with early termination
+            license_key = None
+            expiration_date = None
+            node_type = None
+            node_email = None
+            found_count = 0  # Track how many vars we've found to enable early exit
+            
+            # Use partition for efficient parsing and early termination
+            for env in env_vars:
+                if '=' not in env:
+                    continue
+                key, _, value = env.partition('=')
+                
+                if key == 'LICENSE_KEY':
+                    license_key = value
+                    found_count += 1
+                elif key == 'EXPIRATION_DATE':
+                    expiration_date = value
+                    found_count += 1
+                elif key == 'NODE_TYPE':
+                    node_type = value
+                    found_count += 1
+                elif key == 'NODE_EMAIL':
+                    node_email = value
+                    found_count += 1
+                
+                # Early termination if we found all 4 possible env vars
+                if found_count >= 4:
+                    break
+            
+            # Determine container status (use pre-calculated current time)
+            status = container.status
+            if expiration_date:
+                try:
+                    exp_dt = datetime.fromisoformat(expiration_date.replace('Z', '+00:00'))
+                    if exp_dt.tzinfo is not None:
+                        now = current_time_utc
+                    else:
+                        now = datetime.now()
+                    if now > exp_dt:
+                        status = 'expired'
+                except (ValueError, TypeError):
+                    pass  # Keep original status if expiration date is invalid
+            
+            # Get image name efficiently
+            try:
+                image_name = container.image.tags[0] if container.image.tags else container.image.id[:12]
+            except (AttributeError, IndexError):
+                image_name = 'unknown'
+            
+            host_containers.append({
+                'host_id': host['id'],
+                'host_name': host['name'],
+                'id': container.id[:12],
+                'name': container.name,
+                'status': status,
+                'image': image_name,
+                'created': container.attrs.get('Created', ''),
+                'key': license_key,
+                'email': node_email,
+                'node_type': node_type,
+                'expiration_date': expiration_date
+            })
+    except Exception as e:
+        print(f"Error listing containers on host {host['name']}: {e}")
+    
+    return host_containers
+
+
 @app.route('/api/containers', methods=['GET'])
 @login_required
 def list_containers():
@@ -1063,8 +1157,10 @@ def list_containers():
     
     Performance optimizations:
     - Uses a 5-second cache to handle concurrent requests efficiently
-    - Fetches containers without sparse mode but with minimal data processing
-    - Efficiently parses environment variables
+    - Processes multiple hosts concurrently using ThreadPoolExecutor
+    - Efficiently parses environment variables with early termination
+    - Pre-calculates current time to avoid repeated datetime calls
+    - Optimized expiration checking
     """
     if not current_user.can_view():
         return jsonify({'error': 'View privileges required'}), 403
@@ -1074,67 +1170,32 @@ def list_containers():
     if cached_result is not None:
         return jsonify({'containers': cached_result, 'cached': True})
     
+    # Pre-calculate current time once (used for expiration checking)
+    current_time_utc = datetime.now(timezone.utc)
+    
+    # Process hosts concurrently for faster loading
     all_containers = []
     
-    for host in host_manager.hosts:
-        client = host_manager.get_client(host['id'])
-        if not client:
-            continue
-        
-        try:
-            # List all containers - attrs are already loaded in the list response
-            containers = client.containers.list(all=True)
+    # Use ThreadPoolExecutor to process hosts in parallel
+    # Max workers = min(number of hosts, 5) to avoid overwhelming the system
+    max_workers = min(len(host_manager.hosts), 5)
+    
+    if max_workers > 0:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all host processing tasks
+            future_to_host = {
+                executor.submit(_process_host_containers, host, current_time_utc): host
+                for host in host_manager.hosts
+            }
             
-            for container in containers:
-                # Get environment variables directly from attrs (already loaded)
-                env_vars = container.attrs.get('Config', {}).get('Env', [])
-                
-                # Parse environment variables efficiently with early termination
-                license_key = None
-                expiration_date = None
-                node_type = None
-                node_email = None
-                
-                # Use dictionary to avoid multiple string comparisons
-                for env in env_vars:
-                    if '=' not in env:
-                        continue
-                    key, _, value = env.partition('=')
-                    if key == 'LICENSE_KEY':
-                        license_key = value
-                    elif key == 'EXPIRATION_DATE':
-                        expiration_date = value
-                    elif key == 'NODE_TYPE':
-                        node_type = value
-                    elif key == 'NODE_EMAIL':
-                        node_email = value
-                
-                # Determine container status
-                status = container.status
-                if expiration_date and is_expired(expiration_date):
-                    status = 'expired'
-                
-                # Get image name efficiently
+            # Collect results as they complete
+            for future in as_completed(future_to_host):
                 try:
-                    image_name = container.image.tags[0] if container.image.tags else container.image.id[:12]
-                except (AttributeError, IndexError):
-                    image_name = 'unknown'
-                
-                all_containers.append({
-                    'host_id': host['id'],
-                    'host_name': host['name'],
-                    'id': container.id[:12],
-                    'name': container.name,
-                    'status': status,
-                    'image': image_name,
-                    'created': container.attrs.get('Created', ''),
-                    'key': license_key,
-                    'email': node_email,
-                    'node_type': node_type,
-                    'expiration_date': expiration_date
-                })
-        except Exception as e:
-            print(f"Error listing containers on host {host['name']}: {e}")
+                    host_containers = future.result()
+                    all_containers.extend(host_containers)
+                except Exception as e:
+                    host = future_to_host[future]
+                    print(f"Error processing host {host['name']}: {e}")
     
     # Cache the result
     container_cache.set(all_containers)
