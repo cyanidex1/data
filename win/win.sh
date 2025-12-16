@@ -51,8 +51,10 @@ fi
 # Authentication retry settings - exit after 3 failed attempts
 max_auth_attempts=3
 auth_attempt=0
+max_node_restarts=3
+node_restart_count=0
 
-# Infinite loop to handle node crash, redownload and reconfigure
+# Loop to handle node crash, redownload and reconfigure (limited restarts)
 while true; do
     echo "[*] Downloading and configuring the binary..."
 
@@ -152,6 +154,19 @@ EOF
     NODE_LOG_LEVEL=$log $node
     exit_code=$?
 
-    echo "[!] Node crashed with exit code $exit_code; restarting from scratch..."
+    # Increment restart counter
+    node_restart_count=$((node_restart_count + 1))
+    echo "[!] Node crashed with exit code $exit_code (restart $node_restart_count/$max_node_restarts)"
+    
+    # Exit if max restarts reached
+    if [[ $node_restart_count -ge $max_node_restarts ]]; then
+        echo "[!] ============================================"
+        echo "[!] FAILED: Max node restarts reached ($max_node_restarts)"
+        echo "[!] Container will exit. Check logs for errors."
+        echo "[!] ============================================"
+        exit 1
+    fi
+    
+    echo "[*] Restarting from scratch in 5 seconds..."
     sleep 5
 done

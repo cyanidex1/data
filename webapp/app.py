@@ -579,9 +579,8 @@ class TailscaleManager:
                 args.append(f'--hostname={hostname}')
         
         if exit_node:
-            # Add exit node configuration
+            # Add exit node configuration for isolated network
             args.append(f'--exit-node={exit_node}')
-            args.append('--exit-node-allow-lan-access=true')
         
         result = self._run_tailscale_cmd(args, timeout=60)
         
