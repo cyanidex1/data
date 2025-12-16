@@ -329,6 +329,14 @@
             content: "☀️";
         }
         
+        /* Container name display - improve readability on mobile */
+        td code {
+            word-break: break-all;
+            white-space: normal;
+            display: inline-block;
+            max-width: 100%;
+        }
+        
         /* Responsive Design for Mobile */
         @media (max-width: 768px) {
             .header-content {
@@ -381,7 +389,7 @@
             }
             
             table {
-                font-size: 12px;
+                font-size: 11px;
                 display: block;
                 overflow-x: auto;
                 white-space: nowrap;
@@ -389,6 +397,20 @@
             
             th, td {
                 padding: 8px 4px;
+            }
+            
+            /* Container names in mobile - allow wrapping */
+            td code {
+                font-size: 10px;
+                word-break: break-all;
+                white-space: normal;
+                max-width: 120px;
+            }
+            
+            /* Search input on mobile */
+            #container-search {
+                width: 100% !important;
+                max-width: 300px;
             }
             
             .actions {

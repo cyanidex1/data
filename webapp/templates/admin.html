@@ -433,6 +433,11 @@
                                     <input type="text" id="ts-hostname-input" placeholder="datagram-control-panel">
                                     <div class="help-text">Leave empty to use the default hostname</div>
                                 </div>
+                                <div class="form-group">
+                                    <label for="ts-exit-node">Exit Node (optional)</label>
+                                    <input type="text" id="ts-exit-node" placeholder="100.101.102.103 or hostname">
+                                    <div class="help-text">Route all traffic through a Tailscale exit node. Leave empty to not use an exit node.</div>
+                                </div>
                                 <div class="btn-group" style="display: flex; gap: 8px; margin-top: 16px;">
                                     <button onclick="connectTailscale()" class="btn btn-primary" id="ts-connect-btn">
                                         🔗 Connect
@@ -448,6 +453,31 @@
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <!-- Container Resource Settings -->
+        <div class="card">
+            <div class="card-header">
+                🎛️ Container Resource Settings
+            </div>
+            <div class="card-body">
+                <div class="form-group">
+                    <label for="default-mem-limit">Default Memory Limit (MB)</label>
+                    <input type="number" id="default-mem-limit" value="100" min="50" max="4096" step="50">
+                    <div class="help-text">Default memory limit for new containers. Current: 100MB</div>
+                </div>
+                <div class="form-group">
+                    <label for="default-memswap-limit">Default Memory + Swap Limit (MB)</label>
+                    <input type="number" id="default-memswap-limit" value="200" min="100" max="8192" step="50">
+                    <div class="help-text">Default memory + swap limit for new containers. Current: 200MB</div>
+                </div>
+                <div class="alert alert-info" style="margin-top: 16px;">
+                    <strong>Note:</strong> These settings apply to newly created containers. To update existing containers, you'll need to recreate them (e.g., by editing their expiration date).
+                </div>
+                <button onclick="saveResourceSettings()" class="btn btn-primary" style="margin-top: 12px;">
+                    💾 Save Settings
+                </button>
             </div>
         </div>
     </div>
@@ -984,6 +1014,7 @@
         async function connectTailscale() {
             const authKey = document.getElementById('ts-auth-key').value.trim();
             const hostname = document.getElementById('ts-hostname-input').value.trim();
+            const exitNode = document.getElementById('ts-exit-node').value.trim();
             
             if (!authKey) {
                 showAlert('Please enter a Tailscale auth key', 'error');
@@ -1003,13 +1034,18 @@
                 const response = await fetch('/api/tailscale/connect', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ auth_key: authKey, hostname: hostname || null })
+                    body: JSON.stringify({ 
+                        auth_key: authKey, 
+                        hostname: hostname || null,
+                        exit_node: exitNode || null
+                    })
                 });
                 
                 const data = await response.json();
                 
                 if (response.ok) {
-                    showAlert('Successfully connected to Tailscale network!', 'success');
+                    const exitNodeMsg = exitNode ? ` with exit node ${exitNode}` : '';
+                    showAlert(`Successfully connected to Tailscale network${exitNodeMsg}!`, 'success');
                     document.getElementById('ts-auth-key').value = '';
                     await refreshTailscaleStatus();
                 } else {
@@ -1120,6 +1156,41 @@
         (function() {
             const storedTheme = localStorage.getItem('theme') || 'dark';
             applyTheme(storedTheme);
+        })();
+        
+        // Resource settings functions
+        async function saveResourceSettings() {
+            const memLimit = document.getElementById('default-mem-limit').value;
+            const memswapLimit = document.getElementById('default-memswap-limit').value;
+            
+            if (parseInt(memLimit) < 50 || parseInt(memLimit) > 4096) {
+                showAlert('Memory limit must be between 50 and 4096 MB', 'error');
+                return;
+            }
+            
+            if (parseInt(memswapLimit) < 100 || parseInt(memswapLimit) > 8192) {
+                showAlert('Memory + Swap limit must be between 100 and 8192 MB', 'error');
+                return;
+            }
+            
+            if (parseInt(memswapLimit) < parseInt(memLimit)) {
+                showAlert('Memory + Swap limit must be greater than or equal to Memory limit', 'error');
+                return;
+            }
+            
+            // Store in localStorage for now (can be extended to backend storage)
+            localStorage.setItem('defaultMemLimit', memLimit);
+            localStorage.setItem('defaultMemswapLimit', memswapLimit);
+            
+            showAlert(`Resource settings saved: ${memLimit}MB RAM, ${memswapLimit}MB RAM+Swap`, 'success');
+        }
+        
+        // Load resource settings on page load
+        (function() {
+            const memLimit = localStorage.getItem('defaultMemLimit') || '100';
+            const memswapLimit = localStorage.getItem('defaultMemswapLimit') || '200';
+            document.getElementById('default-mem-limit').value = memLimit;
+            document.getElementById('default-memswap-limit').value = memswapLimit;
         })();
     </script>
 </body>

@@ -453,13 +453,15 @@ class TailscaleManager:
                 return {}
         return {}
     
-    def save_config(self, auth_key=None, hostname=None):
+    def save_config(self, auth_key=None, hostname=None, exit_node=None):
         """Save Tailscale configuration to file"""
         os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
         if auth_key is not None:
             self.config['auth_key'] = auth_key
         if hostname is not None:
             self.config['hostname'] = hostname
+        if exit_node is not None:
+            self.config['exit_node'] = exit_node
         self.config['updated_at'] = datetime.now().isoformat()
         with open(self.config_file, 'w') as f:
             json.dump(self.config, f, indent=2)
@@ -479,7 +481,8 @@ class TailscaleManager:
             return {'success': False, 'message': 'No saved auth key'}
         
         hostname = self.config.get('hostname')
-        return self.connect(auth_key, hostname, save_key=False)
+        exit_node = self.config.get('exit_node')
+        return self.connect(auth_key, hostname, exit_node, save_key=False)
     
     def _run_tailscale_cmd(self, args, timeout=30):
         """Run a tailscale command and return output"""
@@ -549,8 +552,15 @@ class TailscaleManager:
                 'error': result['stderr'] or 'Failed to get status'
             }
     
-    def connect(self, auth_key, hostname=None, save_key=True):
-        """Connect to Tailscale network using auth key"""
+    def connect(self, auth_key, hostname=None, exit_node=None, save_key=True):
+        """Connect to Tailscale network using auth key
+        
+        Args:
+            auth_key: Tailscale authentication key
+            hostname: Optional custom hostname
+            exit_node: Optional exit node IP or hostname to route traffic through
+            save_key: Whether to save the auth key for reconnection
+        """
         if not auth_key:
             return {'success': False, 'error': 'Auth key is required'}
         
@@ -568,14 +578,19 @@ class TailscaleManager:
             if hostname:
                 args.append(f'--hostname={hostname}')
         
+        if exit_node:
+            # Add exit node configuration
+            args.append(f'--exit-node={exit_node}')
+            args.append('--exit-node-allow-lan-access=true')
+        
         result = self._run_tailscale_cmd(args, timeout=60)
         
         if result['success']:
-            # Save auth key and hostname for reconnection on restart
+            # Save auth key, hostname, and exit node for reconnection on restart
             if save_key:
-                self.save_config(auth_key=auth_key, hostname=hostname)
+                self.save_config(auth_key=auth_key, hostname=hostname, exit_node=exit_node)
             else:
-                self.save_config(hostname=hostname)
+                self.save_config(hostname=hostname, exit_node=exit_node)
             return {
                 'success': True,
                 'message': 'Successfully connected to Tailscale network'
@@ -1043,11 +1058,12 @@ def tailscale_connect():
     data = request.json
     auth_key = data.get('auth_key')
     hostname = data.get('hostname')
+    exit_node = data.get('exit_node')
     
     if not auth_key:
         return jsonify({'error': 'Auth key is required'}), 400
     
-    result = tailscale_manager.connect(auth_key, hostname)
+    result = tailscale_manager.connect(auth_key, hostname, exit_node)
     
     if result['success']:
         return jsonify(result)
