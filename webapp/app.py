@@ -1035,6 +1035,75 @@ def update_host(host_id):
     return jsonify({'success': True, 'host': result})
 
 
+@app.route('/api/hosts/generate-setup', methods=['POST'])
+@login_required
+def generate_host_setup_command():
+    """Generate a setup command for adding a new Docker host - admin only"""
+    if not current_user.is_admin():
+        return jsonify({'error': 'Admin privileges required'}), 403
+    
+    data = request.json
+    name = data.get('name', 'docker-host')
+    description = data.get('description', '')
+    
+    # Get the control panel URL (this would be where the control panel is accessible)
+    control_panel_host = request.host
+    
+    # Generate a unique token for this host registration (in production, store this)
+    import secrets
+    token = secrets.token_urlsafe(32)
+    
+    # Generate the setup command
+    # This command will:
+    # 1. Install Docker if not present
+    # 2. Configure Docker to listen on TCP port
+    # 3. Register with the control panel
+    command = f"""# Docker Host Setup Command
+# Run this on your new host to connect it to the control panel
+
+# Step 1: Ensure Docker is installed
+if ! command -v docker &> /dev/null; then
+    echo "Installing Docker..."
+    curl -fsSL https://get.docker.com | sh
+fi
+
+# Step 2: Configure Docker daemon to accept remote connections
+echo "Configuring Docker daemon..."
+sudo mkdir -p /etc/docker
+cat <<EOF | sudo tee /etc/docker/daemon.json
+{{
+  "hosts": ["unix:///var/run/docker.sock", "tcp://0.0.0.0:2375"]
+}}
+EOF
+
+# Step 3: Restart Docker
+sudo systemctl restart docker
+
+# Step 4: Get host IP
+HOST_IP=$(hostname -I | awk '{{print $1}}')
+
+# Step 5: Register with control panel (manual step)
+echo ""
+echo "========================================="
+echo "Docker host configured successfully!"
+echo "========================================="
+echo ""
+echo "Now add this host manually in the control panel:"
+echo "Name: {name}"
+echo "URL: tcp://$HOST_IP:2375"
+echo "Description: {description}"
+echo ""
+echo "Note: For production, consider using TLS certificates"
+echo "      instead of exposing Docker on plain TCP."
+"""
+    
+    return jsonify({
+        'success': True,
+        'command': command,
+        'token': token
+    })
+
+
 # Tailscale API Endpoints
 @app.route('/api/tailscale/status', methods=['GET'])
 @login_required
