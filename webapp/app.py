@@ -1035,73 +1035,6 @@ def update_host(host_id):
     return jsonify({'success': True, 'host': result})
 
 
-@app.route('/api/hosts/generate-setup', methods=['POST'])
-@login_required
-def generate_host_setup_command():
-    """Generate a setup command for adding a new Docker host - admin only"""
-    if not current_user.is_admin():
-        return jsonify({'error': 'Admin privileges required'}), 403
-    
-    data = request.json
-    name = data.get('name', 'docker-host')
-    description = data.get('description', '')
-    
-    # Get the control panel URL (this would be where the control panel is accessible)
-    control_panel_host = request.host
-    
-    # Generate a unique token for this host registration (in production, store this)
-    import secrets
-    token = secrets.token_urlsafe(32)
-    
-    # Generate the setup command
-    # This command will:
-    # 1. Install Docker if not present
-    # 2. Configure Docker to listen on TCP port
-    # 3. Register with the control panel
-    command = f"""# Docker Host Setup Command
-# Run this on your new host to connect it to the control panel
-
-# Step 1: Ensure Docker is installed
-if ! command -v docker &> /dev/null; then
-    echo "Installing Docker..."
-    curl -fsSL https://get.docker.com | sh
-fi
-
-# Step 2: Configure Docker daemon to accept remote connections
-echo "Configuring Docker daemon..."
-sudo mkdir -p /etc/docker
-cat <<EOF | sudo tee /etc/docker/daemon.json
-{{
-  "hosts": ["unix:///var/run/docker.sock", "tcp://0.0.0.0:2375"]
-}}
-EOF
-
-# Step 3: Restart Docker
-sudo systemctl restart docker
-
-# Step 4: Get host IP
-HOST_IP=$(hostname -I | awk '{{print $1}}')
-
-# Step 5: Register with control panel (manual step)
-echo ""
-echo "========================================="
-echo "Docker host configured successfully!"
-echo "========================================="
-echo ""
-echo "Now add this host manually in the control panel:"
-echo "Name: {name}"
-echo "URL: tcp://$HOST_IP:2375"
-echo "Description: {description}"
-echo ""
-echo "Note: For production, consider using TLS certificates"
-echo "      instead of exposing Docker on plain TCP."
-"""
-    
-    return jsonify({
-        'success': True,
-        'command': command,
-        'token': token
-    })
 
 
 # Tailscale API Endpoints
@@ -1620,12 +1553,15 @@ def update_container_expiration(host_id, container_id):
     """Update container expiration date - requires edit permission
     
     This recreates the container with the updated expiration date environment variable.
+    Optionally updates memory limits if provided.
     """
     if not current_user.can_edit():
         return jsonify({'error': 'Edit privileges required'}), 403
     
     data = request.json
     expiration_date = data.get('expiration_date')
+    new_mem_limit = data.get('mem_limit')  # Accept new memory limit from request
+    new_memswap_limit = data.get('memswap_limit')  # Accept new memswap limit from request
     
     try:
         client = host_manager.get_client(int(host_id))
@@ -1666,24 +1602,42 @@ def update_container_expiration(host_id, container_id):
         # Get host config for restart policy
         host_config = container.attrs.get('HostConfig', {})
         restart_policy = host_config.get('RestartPolicy', {'Name': 'unless-stopped'})
-        mem_limit = host_config.get('Memory', 104857600)  # 100MB default
-        memswap_limit = host_config.get('MemorySwap', 209715200)  # 200MB default
+        
+        # Use provided memory limits or fall back to existing container limits
+        if new_mem_limit is not None:
+            # Convert MB to bytes, or 0 for unlimited
+            mem_limit = new_mem_limit * 1024 * 1024 if new_mem_limit > 0 else 0
+        else:
+            mem_limit = host_config.get('Memory', 104857600)  # 100MB default
+        
+        if new_memswap_limit is not None:
+            # Convert MB to bytes, or 0 for unlimited
+            memswap_limit = new_memswap_limit * 1024 * 1024 if new_memswap_limit > 0 else 0
+        else:
+            memswap_limit = host_config.get('MemorySwap', 209715200)  # 200MB default
         
         # Stop and remove the old container
         was_running = container.status == 'running'
         container.remove(force=True)
         
-        # Create new container with updated expiration date
-        new_container = client.containers.run(
-            image,
-            name=container_name,
-            environment=new_env,
-            platform='linux/amd64',
-            detach=True,
-            restart_policy=restart_policy,
-            mem_limit=mem_limit,
-            memswap_limit=memswap_limit
-        )
+        # Create new container with updated settings
+        # Only pass memory limits if they're greater than 0 (Docker doesn't accept 0)
+        container_kwargs = {
+            'image': image,
+            'name': container_name,
+            'environment': new_env,
+            'platform': 'linux/amd64',
+            'detach': True,
+            'restart_policy': restart_policy
+        }
+        
+        # Only add memory limits if they're non-zero
+        if mem_limit > 0:
+            container_kwargs['mem_limit'] = mem_limit
+        if memswap_limit > 0:
+            container_kwargs['memswap_limit'] = memswap_limit
+        
+        new_container = client.containers.run(**container_kwargs)
         
         # If the original container was not running, stop the new one
         if not was_running:

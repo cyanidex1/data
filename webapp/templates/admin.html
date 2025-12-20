@@ -459,18 +459,21 @@
         <!-- Container Resource Settings -->
         <div class="card">
             <div class="card-header">
-                🎛️ Container Resource Settings
+                🎛️ Node Container Resource Settings
             </div>
             <div class="card-body">
+                <div class="alert alert-info" style="margin-bottom: 16px;">
+                    <strong>Note:</strong> These settings apply only to node containers (win, element, elevate, grow, revo, rlink, switch, datagram). The webapp container is not affected.
+                </div>
                 <div class="form-group">
                     <label for="default-mem-limit">Default Memory Limit (MB)</label>
                     <input type="number" id="default-mem-limit" value="100" min="50" max="4096" step="50">
-                    <div class="help-text">Default memory limit for new containers. Current: 100MB</div>
+                    <div class="help-text">Default memory limit for new node containers. Current: 100MB</div>
                 </div>
                 <div class="form-group">
                     <label for="default-memswap-limit">Default Memory + Swap Limit (MB)</label>
                     <input type="number" id="default-memswap-limit" value="200" min="100" max="8192" step="50">
-                    <div class="help-text">Default memory + swap limit for new containers. Current: 200MB</div>
+                    <div class="help-text">Default memory + swap limit for new node containers. Current: 200MB</div>
                 </div>
                 
                 <div class="form-group" style="margin-top: 24px;">
@@ -478,11 +481,11 @@
                     <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
                         <label style="display: flex; align-items: center; gap: 8px; font-weight: normal;">
                             <input type="radio" name="apply-memory-to" value="new" checked>
-                            <span>New containers only</span>
+                            <span>New node containers only</span>
                         </label>
                         <label style="display: flex; align-items: center; gap: 8px; font-weight: normal;">
                             <input type="radio" name="apply-memory-to" value="all">
-                            <span>All existing containers (will restart one by one)</span>
+                            <span>All existing node containers (will restart one by one)</span>
                         </label>
                         <label style="display: flex; align-items: center; gap: 8px; font-weight: normal;">
                             <input type="checkbox" id="remove-memory-limit">
@@ -494,7 +497,7 @@
                 <div id="bulk-memory-progress" style="display: none; margin-top: 16px; padding: 12px; background: var(--bg-color); border-radius: 6px;">
                     <div style="margin-bottom: 8px; color: var(--text-muted-color);">
                         <strong>Applying memory settings...</strong><br>
-                        <span id="bulk-memory-current">0</span> / <span id="bulk-memory-total">0</span> containers updated
+                        <span id="bulk-memory-current">0</span> / <span id="bulk-memory-total">0</span> node containers updated
                     </div>
                     <div style="width: 100%; background: var(--border-color); height: 6px; border-radius: 3px; overflow: hidden;">
                         <div id="bulk-memory-progress-bar" style="width: 0%; background: var(--primary-color); height: 100%; transition: width 0.3s;"></div>
@@ -517,7 +520,7 @@
                     <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                         <input type="checkbox" id="auto-restart-toggle" onchange="toggleAutoRestart(this.checked)" style="width: 20px; height: 20px;">
                         <div>
-                            <strong>Automatically restart unhealthy containers</strong>
+                            <strong>Automatically restart unhealthy and exited containers</strong>
                             <div class="help-text" style="margin-top: 4px;">Monitor containers and restart them if they become unhealthy or exit unexpectedly</div>
                         </div>
                     </label>
@@ -526,7 +529,7 @@
                     <strong>Status:</strong> <span id="auto-restart-status-text">Disabled</span>
                 </div>
                 <div class="help-text" style="margin-top: 16px;">
-                    <strong>Note:</strong> This uses Docker's restart policies. Containers with "unless-stopped" policy will automatically restart if they exit.
+                    <strong>Note:</strong> This uses Docker's restart policies. Containers with "unless-stopped" policy will automatically restart if they exit or become unhealthy.
                 </div>
             </div>
         </div>
@@ -570,49 +573,27 @@
 
     <!-- Add Host Modal -->
     <div id="add-host-modal" class="modal">
-        <div class="modal-content" style="max-width: 600px;">
+        <div class="modal-content">
             <div class="modal-header">Add Docker Host</div>
             <form id="add-host-form">
                 <div class="modal-body">
-                    <div id="host-step-1">
-                        <div class="form-group">
-                            <label for="host-name">Host Name</label>
-                            <input type="text" id="host-name" placeholder="e.g., Production Server" required>
-                            <div class="help-text">Enter a descriptive name for this host</div>
-                        </div>
-                        <div class="form-group">
-                            <label for="host-description">Description (optional)</label>
-                            <input type="text" id="host-description" placeholder="Description of this host">
-                        </div>
+                    <div class="form-group">
+                        <label for="host-name">Name</label>
+                        <input type="text" id="host-name" placeholder="e.g., Production Server" required>
                     </div>
-                    
-                    <div id="host-step-2" style="display: none;">
-                        <div class="alert alert-success" style="margin-bottom: 16px;">
-                            <strong>✓ Host registered!</strong> Run this command on your host to establish connection:
-                        </div>
-                        
-                        <div style="background: var(--bg-color); padding: 16px; border-radius: 6px; margin-bottom: 12px; position: relative;">
-                            <code id="host-setup-command" style="display: block; word-break: break-all; font-size: 12px; color: var(--success-color);">
-                                # Loading command...
-                            </code>
-                            <button type="button" onclick="copySetupCommand()" class="btn btn-sm btn-secondary" style="position: absolute; top: 12px; right: 12px;">
-                                📋 Copy
-                            </button>
-                        </div>
-                        
-                        <div class="help-text" style="margin-bottom: 16px;">
-                            <strong>Instructions:</strong>
-                            <ol style="margin-top: 8px; margin-left: 20px;">
-                                <li>SSH into your new host machine</li>
-                                <li>Copy and paste the command above</li>
-                                <li>The host will appear in your hosts list once connected</li>
-                            </ol>
-                        </div>
+                    <div class="form-group">
+                        <label for="host-url">URL</label>
+                        <input type="text" id="host-url" placeholder="e.g., tcp://192.168.1.100:2375 or 'local'" required>
+                        <div class="help-text">Use 'local' for local Docker or tcp://host:port for remote</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="host-description">Description (optional)</label>
+                        <input type="text" id="host-description" placeholder="Description of this host">
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" onclick="closeAddHostModal()" class="btn btn-secondary">Close</button>
-                    <button type="submit" class="btn btn-primary" id="host-save-btn">Generate Setup Command</button>
+                    <button type="button" onclick="closeAddHostModal()" class="btn btn-secondary">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Host</button>
                 </div>
             </form>
         </div>
@@ -876,65 +857,32 @@
         function closeAddHostModal() {
             document.getElementById('add-host-modal').classList.remove('active');
             document.getElementById('add-host-form').reset();
-            
-            // Reset to step 1
-            document.getElementById('host-step-1').style.display = 'block';
-            document.getElementById('host-step-2').style.display = 'none';
-            document.getElementById('host-save-btn').style.display = 'inline-block';
-            document.getElementById('host-save-btn').disabled = false;
-            document.getElementById('host-save-btn').textContent = 'Generate Setup Command';
         }
         
         async function addHost() {
-            const step1 = document.getElementById('host-step-1');
-            const step2 = document.getElementById('host-step-2');
-            const saveBtn = document.getElementById('host-save-btn');
+            const name = document.getElementById('host-name').value;
+            const url = document.getElementById('host-url').value;
+            const description = document.getElementById('host-description').value;
             
-            // If we're on step 1, generate the command
-            if (step1.style.display !== 'none') {
-                const name = document.getElementById('host-name').value;
-                const description = document.getElementById('host-description').value;
+            try {
+                const response = await fetch('/api/hosts', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ name, url, description })
+                });
                 
-                saveBtn.disabled = true;
-                saveBtn.textContent = 'Generating...';
+                const data = await response.json();
                 
-                try {
-                    const response = await fetch('/api/hosts/generate-setup', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({ name, description })
-                    });
-                    
-                    const data = await response.json();
-                    
-                    if (response.ok) {
-                        // Show step 2 with the command
-                        step1.style.display = 'none';
-                        step2.style.display = 'block';
-                        saveBtn.style.display = 'none';
-                        
-                        document.getElementById('host-setup-command').textContent = data.command;
-                        showAlert('Setup command generated!', 'success');
-                    } else {
-                        showAlert('Error: ' + data.error, 'error');
-                        saveBtn.disabled = false;
-                        saveBtn.textContent = 'Generate Setup Command';
-                    }
-                } catch (error) {
-                    showAlert('Error generating setup command: ' + error.message, 'error');
-                    saveBtn.disabled = false;
-                    saveBtn.textContent = 'Generate Setup Command';
+                if (response.ok) {
+                    showAlert('Host added successfully!', 'success');
+                    closeAddHostModal();
+                    location.reload();
+                } else {
+                    showAlert('Error: ' + data.error, 'error');
                 }
+            } catch (error) {
+                showAlert('Error adding host: ' + error.message, 'error');
             }
-        }
-        
-        function copySetupCommand() {
-            const command = document.getElementById('host-setup-command').textContent;
-            navigator.clipboard.writeText(command).then(() => {
-                showAlert('Command copied to clipboard!', 'success');
-            }).catch(err => {
-                showAlert('Failed to copy: ' + err.message, 'error');
-            });
         }
         
         async function removeHost(hostId) {
@@ -1381,9 +1329,9 @@
             
             statusDiv.style.display = 'block';
             if (enabled) {
-                statusText.textContent = 'Enabled - Monitoring containers for automatic restart';
+                statusText.textContent = 'Enabled - Monitoring unhealthy and exited containers for automatic restart';
                 statusDiv.className = 'alert alert-success';
-                showAlert('Auto-restart monitoring enabled', 'success');
+                showAlert('Auto-restart monitoring enabled for unhealthy and exited containers', 'success');
             } else {
                 statusText.textContent = 'Disabled';
                 statusDiv.className = 'alert alert-info';
@@ -1403,7 +1351,7 @@
             document.getElementById('auto-restart-toggle').checked = autoRestartEnabled;
             if (autoRestartEnabled) {
                 document.getElementById('auto-restart-status').style.display = 'block';
-                document.getElementById('auto-restart-status-text').textContent = 'Enabled - Monitoring containers for automatic restart';
+                document.getElementById('auto-restart-status-text').textContent = 'Enabled - Monitoring unhealthy and exited containers for automatic restart';
                 document.getElementById('auto-restart-status').className = 'alert alert-success';
             }
         })();
