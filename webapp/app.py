@@ -1322,6 +1322,7 @@ def start_container():
     node_type = data.get('node_type', 'datagram')
     expiration_date = data.get('expiration_date')
     container_name = data.get('container_name')
+    node_count = data.get('node_count', 1)  # Number of containers to start
     
     # Validate node type
     if node_type not in NODE_TYPES:
@@ -1332,12 +1333,21 @@ def start_container():
     if host_id is None:
         return jsonify({'error': 'Host ID is required'}), 400
     
+    # Validate node_count
+    if not isinstance(node_count, int) or node_count < 1 or node_count > 50:
+        return jsonify({'error': 'node_count must be between 1 and 50'}), 400
+    
+    # Only allow multiple containers for email/password auth (not for datagram)
+    if node_config['auth_type'] == 'api_key' and node_count > 1:
+        return jsonify({'error': 'Multiple containers not supported for API key authentication'}), 400
+    
     client = host_manager.get_client(host_id)
     if not client:
         return jsonify({'error': 'Could not connect to Docker host'}), 500
     
     # Prepare environment variables based on auth type
     env_vars = {}
+    base_container_name = None
     
     if node_config['auth_type'] == 'api_key':
         # Datagram uses LICENSE_KEY
@@ -1349,6 +1359,7 @@ def start_container():
         env_vars['LICENSE_KEY'] = key
         if not container_name:
             container_name = key
+        base_container_name = container_name
     else:
         # Email/password authentication
         email = data.get('email')
@@ -1377,10 +1388,12 @@ def start_container():
             # Remove consecutive hyphens
             email_prefix = re.sub(r'-+', '-', email_prefix).strip('-')
             container_name = f'{node_type}-{email_prefix}'
+        
+        base_container_name = container_name
     
     # Sanitize container name and remove consecutive hyphens
-    container_name = re.sub(r'[^a-zA-Z0-9_.-]', '-', container_name)
-    container_name = re.sub(r'-+', '-', container_name).strip('-')
+    base_container_name = re.sub(r'[^a-zA-Z0-9_.-]', '-', base_container_name)
+    base_container_name = re.sub(r'-+', '-', base_container_name).strip('-')
     
     # Add expiration date if provided
     if expiration_date:
@@ -1394,18 +1407,6 @@ def start_container():
     env_vars['NODE_TYPE'] = node_type
     
     try:
-        # For api_key nodes (datagram), check if container already exists (no duplicates allowed)
-        # For email/password nodes, always add numbering to allow multiple instances
-        if node_config['auth_type'] == 'api_key':
-            try:
-                existing = client.containers.get(container_name)
-                return jsonify({'error': f'Container with name "{container_name}" already exists'}), 400
-            except docker.errors.NotFound:
-                pass
-        else:
-            # For non-datagram nodes, always add numbering (-1, -2, -3, etc.)
-            container_name = find_unique_container_name(client, container_name)
-        
         # Check if image exists
         image_name = node_config['image']
         try:
@@ -1413,27 +1414,57 @@ def start_container():
         except docker.errors.ImageNotFound:
             return jsonify({'error': f'Image "{image_name}" not found on host. Please build it first.'}), 400
         
-        # Start the container
-        container = client.containers.run(
-            image_name,
-            name=container_name,
-            environment=env_vars,
-            platform='linux/amd64',
-            detach=True,
-            restart_policy={'Name': 'unless-stopped'},
-            mem_limit='100m',
-            memswap_limit='200m'
-        )
+        # Start multiple containers if requested
+        started_containers = []
         
-        # Invalidate cache since a new container was created
+        for i in range(node_count):
+            # Prepare container name
+            if node_config['auth_type'] == 'api_key':
+                # For datagram, check if container already exists
+                current_container_name = base_container_name
+                try:
+                    existing = client.containers.get(current_container_name)
+                    return jsonify({'error': f'Container with name "{current_container_name}" already exists'}), 400
+                except docker.errors.NotFound:
+                    pass
+            else:
+                # For email/password nodes, always add numbering
+                current_container_name = find_unique_container_name(client, base_container_name)
+            
+            # Start the container
+            container = client.containers.run(
+                image_name,
+                name=current_container_name,
+                environment=env_vars,
+                platform='linux/amd64',
+                detach=True,
+                restart_policy={'Name': 'unless-stopped'},
+                mem_limit='100m',
+                memswap_limit='200m'
+            )
+            
+            started_containers.append({
+                'container_id': container.id[:12],
+                'container_name': current_container_name
+            })
+        
+        # Invalidate cache since new containers were created
         container_cache.invalidate()
         
-        return jsonify({
-            'success': True,
-            'container_id': container.id[:12],
-            'container_name': container_name,
-            'node_type': node_type
-        })
+        if len(started_containers) == 1:
+            return jsonify({
+                'success': True,
+                'container_id': started_containers[0]['container_id'],
+                'container_name': started_containers[0]['container_name'],
+                'node_type': node_type
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'containers': started_containers,
+                'node_type': node_type,
+                'count': len(started_containers)
+            })
     
     except Exception as e:
         return jsonify({'error': str(e)}), 500

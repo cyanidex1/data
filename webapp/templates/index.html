@@ -539,6 +539,11 @@
                             <input type="text" id="node-name-input" placeholder="Custom node name (optional)">
                             <div class="help-text">Leave empty for auto-generated name</div>
                         </div>
+                        <div class="form-group">
+                            <label for="node-count-input">Number of Nodes</label>
+                            <input type="number" id="node-count-input" placeholder="1" min="1" max="50" value="1">
+                            <div class="help-text">Start multiple nodes with the same credentials (1-50)</div>
+                        </div>
                     </div>
                     
                     <div class="form-group">
@@ -1352,6 +1357,7 @@
                 const email = document.getElementById('email-input').value;
                 const password = document.getElementById('password-input').value;
                 const nodeName = document.getElementById('node-name-input').value;
+                const nodeCount = parseInt(document.getElementById('node-count-input').value) || 1;
                 
                 if (!email) {
                     showAlert('Email is required', 'error');
@@ -1363,10 +1369,23 @@
                     return;
                 }
                 
+                if (nodeCount < 1 || nodeCount > 50) {
+                    showAlert('Number of nodes must be between 1 and 50', 'error');
+                    return;
+                }
+                
                 payload.email = email;
                 payload.password = password;
                 if (nodeName) {
                     payload.node_name = nodeName;
+                }
+                payload.node_count = nodeCount;
+                
+                // If starting multiple nodes, confirm with user
+                if (nodeCount > 1) {
+                    if (!confirm(`Start ${nodeCount} containers with the same credentials?`)) {
+                        return;
+                    }
                 }
             }
             
@@ -1380,12 +1399,17 @@
                 const data = await response.json();
                 
                 if (response.ok) {
-                    showAlert(`Container started successfully: ${data.container_name}`, 'success');
+                    if (data.containers && data.containers.length > 1) {
+                        showAlert(`${data.containers.length} containers started successfully!`, 'success');
+                    } else {
+                        showAlert(`Container started successfully: ${data.container_name}`, 'success');
+                    }
                     // Clear form fields
                     document.getElementById('key-input').value = '';
                     document.getElementById('email-input').value = '';
                     document.getElementById('password-input').value = '';
                     document.getElementById('node-name-input').value = '';
+                    document.getElementById('node-count-input').value = '1';
                     document.getElementById('expiration-input').value = '';
                     refreshContainers();
                 } else {
