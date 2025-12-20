@@ -1369,13 +1369,15 @@ def start_container():
                 current_container_name = find_unique_container_name(client, base_container_name)
             
             # Start the container
+            # Use 'on-failure' restart policy with max 3 retries to prevent infinite loops
+            # when authentication fails. After 3 failures, container will stay stopped.
             container = client.containers.run(
                 image_name,
                 name=current_container_name,
                 environment=env_vars,
                 platform='linux/amd64',
                 detach=True,
-                restart_policy={'Name': 'unless-stopped'},
+                restart_policy={'Name': 'on-failure', 'MaximumRetryCount': 3},
                 mem_limit='100m',
                 memswap_limit='200m'
             )
@@ -1605,7 +1607,11 @@ def update_container_expiration(host_id, container_id):
         
         # Get host config for restart policy
         host_config = container.attrs.get('HostConfig', {})
-        restart_policy = host_config.get('RestartPolicy', {'Name': 'unless-stopped'})
+        old_restart_policy = host_config.get('RestartPolicy', {})
+        
+        # Use 'on-failure' with max 3 retries to prevent infinite authentication loops
+        # This replaces 'unless-stopped' which causes containers to restart infinitely
+        restart_policy = {'Name': 'on-failure', 'MaximumRetryCount': 3}
         
         # Use provided memory limits or fall back to existing container limits
         if new_mem_limit is not None:
@@ -1968,6 +1974,7 @@ def import_keys():
                     pass  # If parsing fails, skip expiration date
             
             # Start the container
+            # Use 'on-failure' restart policy with max 3 retries to prevent infinite loops
             try:
                 container = client.containers.run(
                     image_name,
@@ -1975,7 +1982,7 @@ def import_keys():
                     environment=env_vars,
                     platform='linux/amd64',
                     detach=True,
-                    restart_policy={'Name': 'unless-stopped'},
+                    restart_policy={'Name': 'on-failure', 'MaximumRetryCount': 3},
                     mem_limit='100m',
                     memswap_limit='200m'
                 )
