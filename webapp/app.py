@@ -1110,7 +1110,7 @@ def _process_host_containers(host, current_time_utc):
         current_time_utc: Current UTC datetime (pre-calculated to avoid repeated calls)
     
     Returns:
-        List of container dictionaries
+        List of container dictionaries (excludes the webapp container itself)
     """
     client = host_manager.get_client(host['id'])
     if not client:
@@ -1123,6 +1123,10 @@ def _process_host_containers(host, current_time_utc):
         containers = client.containers.list(all=True)
         
         for container in containers:
+            # Skip the webapp container itself (datagram-control-panel)
+            if container.name == 'datagram-control-panel':
+                continue
+            
             # Get environment variables directly from attrs (already loaded)
             env_vars = container.attrs.get('Config', {}).get('Env', [])
             
