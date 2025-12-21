@@ -477,7 +477,17 @@
                 </div>
                 
                 <div class="form-group" style="margin-top: 24px;">
-                    <label>Apply Memory Settings To</label>
+                    <label style="display: flex; align-items: center; gap: 8px; font-weight: normal; margin-bottom: 12px;">
+                        <input type="checkbox" id="remove-memory-limit">
+                        <span><strong>Remove memory limits (unlimited)</strong></span>
+                    </label>
+                    <div class="help-text" style="margin-bottom: 16px;">
+                        When checked, removes all memory limits. When unchecked, applies the memory limits specified above.
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Apply Settings To</label>
                     <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
                         <label style="display: flex; align-items: center; gap: 8px; font-weight: normal;">
                             <input type="radio" name="apply-memory-to" value="new" checked>
@@ -487,10 +497,9 @@
                             <input type="radio" name="apply-memory-to" value="all">
                             <span>All existing node containers (will restart one by one)</span>
                         </label>
-                        <label style="display: flex; align-items: center; gap: 8px; font-weight: normal;">
-                            <input type="checkbox" id="remove-memory-limit">
-                            <span>Remove memory limits (unlimited)</span>
-                        </label>
+                    </div>
+                    <div class="help-text" style="margin-top: 8px;">
+                        Choose whether to apply settings only to new containers or also update all existing containers.
                     </div>
                 </div>
                 
@@ -736,6 +745,29 @@
                 e.preventDefault();
                 updateHost();
             });
+            
+            // Add listener for remove memory limit checkbox to update UI
+            const removeMemLimitCheckbox = document.getElementById('remove-memory-limit');
+            if (removeMemLimitCheckbox) {
+                removeMemLimitCheckbox.addEventListener('change', function() {
+                    const memLimitInput = document.getElementById('default-mem-limit');
+                    const memswapLimitInput = document.getElementById('default-memswap-limit');
+                    
+                    if (this.checked) {
+                        // Disable memory limit inputs when remove is checked
+                        memLimitInput.disabled = true;
+                        memswapLimitInput.disabled = true;
+                        memLimitInput.style.opacity = '0.5';
+                        memswapLimitInput.style.opacity = '0.5';
+                    } else {
+                        // Enable memory limit inputs when remove is unchecked
+                        memLimitInput.disabled = false;
+                        memswapLimitInput.disabled = false;
+                        memLimitInput.style.opacity = '1';
+                        memswapLimitInput.style.opacity = '1';
+                    }
+                });
+            }
             
             // Load Tailscale status on page load
             refreshTailscaleStatus();
@@ -1246,13 +1278,17 @@
             
             // If applying to all existing containers
             if (applyTo === 'all') {
-                if (!confirm(`This will restart all containers one by one to apply new memory settings. Continue?`)) {
+                const actionText = removeLimit 
+                    ? 'remove memory limits from all node containers' 
+                    : `set memory limit to ${memLimit}MB RAM and ${memswapLimit}MB RAM+Swap for all node containers`;
+                
+                if (!confirm(`This will restart all node containers one by one to ${actionText}. Continue?`)) {
                     return;
                 }
                 await applyMemoryToAllContainers(removeLimit ? 0 : parseInt(memLimit), removeLimit ? 0 : parseInt(memswapLimit));
             } else {
-                const limitText = removeLimit ? 'unlimited' : `${memLimit}MB RAM, ${memswapLimit}MB RAM+Swap`;
-                showAlert(`Resource settings saved: ${limitText} (applies to new containers)`, 'success');
+                const limitText = removeLimit ? 'unlimited (no limits)' : `${memLimit}MB RAM, ${memswapLimit}MB RAM+Swap`;
+                showAlert(`Resource settings saved: ${limitText} (will apply to new node containers only)`, 'success');
             }
         }
         
