@@ -457,30 +457,6 @@
         </div>
 
 
-
-        <!-- Auto-Restart Monitoring -->
-        <div class="card">
-            <div class="card-header">
-                🔄 Auto-Restart Monitoring
-            </div>
-            <div class="card-body">
-                <div class="form-group">
-                    <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
-                        <input type="checkbox" id="auto-restart-toggle" onchange="toggleAutoRestart(this.checked)" style="width: 20px; height: 20px;">
-                        <div>
-                            <strong>Automatically restart unhealthy and exited containers</strong>
-                            <div class="help-text" style="margin-top: 4px;">Monitor containers and restart them if they become unhealthy or exit unexpectedly</div>
-                        </div>
-                    </label>
-                </div>
-                <div id="auto-restart-status" class="alert alert-info" style="margin-top: 16px; display: none;">
-                    <strong>Status:</strong> <span id="auto-restart-status-text">Disabled</span>
-                </div>
-                <div class="help-text" style="margin-top: 16px;">
-                    <strong>Note:</strong> This uses Docker's restart policies. Containers with "unless-stopped" policy will automatically restart if they exit or become unhealthy.
-                </div>
-            </div>
-        </div>
     </div>
 
     <!-- Add User Modal -->
@@ -1182,37 +1158,7 @@
             applyTheme(storedTheme);
         })();
         
-        // Resource settings functions
 
-        // Auto-restart monitoring toggle
-        async function toggleAutoRestart(enabled) {
-            const statusDiv = document.getElementById('auto-restart-status');
-            const statusText = document.getElementById('auto-restart-status-text');
-            
-            localStorage.setItem('autoRestartEnabled', enabled ? 'true' : 'false');
-            
-            statusDiv.style.display = 'block';
-            if (enabled) {
-                statusText.textContent = 'Enabled - Monitoring unhealthy and exited containers for automatic restart';
-                statusDiv.className = 'alert alert-success';
-                showAlert('Auto-restart monitoring enabled for unhealthy and exited containers', 'success');
-            } else {
-                statusText.textContent = 'Disabled';
-                statusDiv.className = 'alert alert-info';
-                showAlert('Auto-restart monitoring disabled', 'success');
-            }
-        }
-        
-        // Load auto-restart settings on page load
-        (function() {
-            const autoRestartEnabled = localStorage.getItem('autoRestartEnabled') === 'true';
-            document.getElementById('auto-restart-toggle').checked = autoRestartEnabled;
-            if (autoRestartEnabled) {
-                document.getElementById('auto-restart-status').style.display = 'block';
-                document.getElementById('auto-restart-status-text').textContent = 'Enabled - Monitoring unhealthy and exited containers for automatic restart';
-                document.getElementById('auto-restart-status').className = 'alert alert-success';
-            }
-        })();
     </script>
 </body>
 </html>
