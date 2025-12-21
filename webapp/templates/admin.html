@@ -472,8 +472,8 @@
                 </div>
                 <div class="form-group">
                     <label for="default-memswap-limit">Default Memory + Swap Limit (MB)</label>
-                    <input type="number" id="default-memswap-limit" value="200" min="100" max="8192" step="50">
-                    <div class="help-text">Default memory + swap limit for new node containers. Current: 200MB</div>
+                    <input type="number" id="default-memswap-limit" value="200" min="0" max="8192" step="50">
+                    <div class="help-text">Default memory + swap limit for new node containers. Set to 0 to disable swap. Current: 200MB</div>
                 </div>
                 
                 <div class="form-group" style="margin-top: 24px;">
@@ -1256,13 +1256,15 @@
                     return;
                 }
                 
-                if (parseInt(memswapLimit) < 100 || parseInt(memswapLimit) > 8192) {
-                    showAlert('Memory + Swap limit must be between 100 and 8192 MB', 'error');
+                // Swap can be 0 (disabled) or between 100-8192 MB
+                if (parseInt(memswapLimit) < 0 || parseInt(memswapLimit) > 8192) {
+                    showAlert('Memory + Swap limit must be 0 (disabled) or between 100 and 8192 MB', 'error');
                     return;
                 }
                 
-                if (parseInt(memswapLimit) < parseInt(memLimit)) {
-                    showAlert('Memory + Swap limit must be greater than or equal to Memory limit', 'error');
+                // Only validate swap >= memory if swap is not 0 (disabled)
+                if (parseInt(memswapLimit) > 0 && parseInt(memswapLimit) < parseInt(memLimit)) {
+                    showAlert('Memory + Swap limit must be greater than or equal to Memory limit (or 0 to disable swap)', 'error');
                     return;
                 }
             }
@@ -1278,16 +1280,26 @@
             
             // If applying to all existing containers
             if (applyTo === 'all') {
-                const actionText = removeLimit 
-                    ? 'remove memory limits from all node containers' 
-                    : `set memory limit to ${memLimit}MB RAM and ${memswapLimit}MB RAM+Swap for all node containers`;
+                let actionText;
+                if (removeLimit) {
+                    actionText = 'remove memory limits from all node containers';
+                } else {
+                    const swapText = parseInt(memswapLimit) === 0 ? 'swap disabled' : `${memswapLimit}MB RAM+Swap`;
+                    actionText = `set memory limit to ${memLimit}MB RAM and ${swapText} for all node containers`;
+                }
                 
                 if (!confirm(`This will restart all node containers one by one to ${actionText}. Continue?`)) {
                     return;
                 }
                 await applyMemoryToAllContainers(removeLimit ? 0 : parseInt(memLimit), removeLimit ? 0 : parseInt(memswapLimit));
             } else {
-                const limitText = removeLimit ? 'unlimited (no limits)' : `${memLimit}MB RAM, ${memswapLimit}MB RAM+Swap`;
+                let limitText;
+                if (removeLimit) {
+                    limitText = 'unlimited (no limits)';
+                } else {
+                    const swapText = parseInt(memswapLimit) === 0 ? 'swap disabled' : `${memswapLimit}MB RAM+Swap`;
+                    limitText = `${memLimit}MB RAM, ${swapText}`;
+                }
                 showAlert(`Resource settings saved: ${limitText} (will apply to new node containers only)`, 'success');
             }
         }
@@ -1344,7 +1356,8 @@
                     progressBar.style.width = `${((i + 1) / containers.length) * 100}%`;
                 }
                 
-                const limitText = memLimit === 0 ? 'unlimited' : `${memLimit}MB RAM, ${memswapLimit}MB RAM+Swap`;
+                const swapText = memswapLimit === 0 ? 'swap disabled' : `${memswapLimit}MB RAM+Swap`;
+                const limitText = memLimit === 0 ? 'unlimited' : `${memLimit}MB RAM, ${swapText}`;
                 showAlert(`Memory settings applied: ${successCount} containers updated${failCount > 0 ? `, ${failCount} failed` : ''} with ${limitText}`, 'success');
             } catch (error) {
                 showAlert('Error applying memory settings: ' + error.message, 'error');
