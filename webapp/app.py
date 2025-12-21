@@ -1368,10 +1368,6 @@ def start_container():
                 # For email/password nodes, always add numbering
                 current_container_name = find_unique_container_name(client, base_container_name)
             
-            # Get memory limits from request or use defaults
-            mem_limit_mb = data.get('mem_limit', 100)  # Default 100MB
-            memswap_limit_mb = data.get('memswap_limit', 200)  # Default 200MB
-            
             # Prepare container run kwargs
             container_kwargs = {
                 'image': image_name,
@@ -1381,15 +1377,6 @@ def start_container():
                 'detach': True,
                 'restart_policy': {'Name': 'on-failure', 'MaximumRetryCount': 3}
             }
-            
-            # Add memory limits if specified
-            if mem_limit_mb > 0:
-                container_kwargs['mem_limit'] = f'{mem_limit_mb}m'
-                # Handle swap: if memswap is 0, disable swap (set equal to mem_limit)
-                if memswap_limit_mb == 0:
-                    container_kwargs['memswap_limit'] = f'{mem_limit_mb}m'
-                elif memswap_limit_mb > 0:
-                    container_kwargs['memswap_limit'] = f'{memswap_limit_mb}m'
             
             # Start the container
             # Use 'on-failure' restart policy with max 3 retries to prevent infinite loops
@@ -1580,8 +1567,6 @@ def update_container_expiration(host_id, container_id):
     
     data = request.json
     expiration_date = data.get('expiration_date')
-    new_mem_limit = data.get('mem_limit')  # Accept new memory limit from request
-    new_memswap_limit = data.get('memswap_limit')  # Accept new memswap limit from request
     
     try:
         client = host_manager.get_client(int(host_id))
@@ -1621,31 +1606,16 @@ def update_container_expiration(host_id, container_id):
         
         # Get host config for restart policy
         host_config = container.attrs.get('HostConfig', {})
-        old_restart_policy = host_config.get('RestartPolicy', {})
         
         # Use 'on-failure' with max 3 retries to prevent infinite authentication loops
         # This replaces 'unless-stopped' which causes containers to restart infinitely
         restart_policy = {'Name': 'on-failure', 'MaximumRetryCount': 3}
-        
-        # Use provided memory limits or fall back to existing container limits
-        if new_mem_limit is not None:
-            # Convert MB to bytes, or 0 for unlimited
-            mem_limit = new_mem_limit * 1024 * 1024 if new_mem_limit > 0 else 0
-        else:
-            mem_limit = host_config.get('Memory', 104857600)  # 100MB default
-        
-        if new_memswap_limit is not None:
-            # Convert MB to bytes, or 0 for unlimited
-            memswap_limit = new_memswap_limit * 1024 * 1024 if new_memswap_limit > 0 else 0
-        else:
-            memswap_limit = host_config.get('MemorySwap', 209715200)  # 200MB default
         
         # Stop and remove the old container
         was_running = container.status == 'running'
         container.remove(force=True)
         
         # Create new container with updated settings
-        # Only pass memory limits if they're greater than 0 (Docker doesn't accept 0)
         container_kwargs = {
             'image': image,
             'name': container_name,
@@ -1654,20 +1624,6 @@ def update_container_expiration(host_id, container_id):
             'detach': True,
             'restart_policy': restart_policy
         }
-        
-        # Only add memory limits if they're non-zero
-        if mem_limit > 0:
-            container_kwargs['mem_limit'] = mem_limit
-            # Handle swap: if memswap_limit is 0, it means disable swap (set equal to mem_limit)
-            # If memswap_limit > 0, use that value
-            # If memswap_limit not specified at all, Docker uses default (2x memory)
-            if new_memswap_limit is not None:
-                if memswap_limit == 0:
-                    # Disable swap by setting memswap = mem (no additional swap)
-                    container_kwargs['memswap_limit'] = mem_limit
-                else:
-                    # Use the specified swap limit
-                    container_kwargs['memswap_limit'] = memswap_limit
         
         new_container = client.containers.run(**container_kwargs)
         
@@ -1998,10 +1954,6 @@ def import_keys():
             # Start the container
             # Use 'on-failure' restart policy with max 3 retries to prevent infinite loops
             try:
-                # Get memory limits from request or use defaults
-                mem_limit_mb = data.get('mem_limit', 100)  # Default 100MB
-                memswap_limit_mb = data.get('memswap_limit', 200)  # Default 200MB
-                
                 # Prepare container run kwargs
                 container_kwargs = {
                     'image': image_name,
@@ -2011,15 +1963,6 @@ def import_keys():
                     'detach': True,
                     'restart_policy': {'Name': 'on-failure', 'MaximumRetryCount': 3}
                 }
-                
-                # Add memory limits if specified
-                if mem_limit_mb > 0:
-                    container_kwargs['mem_limit'] = f'{mem_limit_mb}m'
-                    # Handle swap: if memswap is 0, disable swap (set equal to mem_limit)
-                    if memswap_limit_mb == 0:
-                        container_kwargs['memswap_limit'] = f'{mem_limit_mb}m'
-                    elif memswap_limit_mb > 0:
-                        container_kwargs['memswap_limit'] = f'{memswap_limit_mb}m'
                 
                 container = client.containers.run(**container_kwargs)
                 

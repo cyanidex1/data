@@ -456,68 +456,7 @@
             </div>
         </div>
 
-        <!-- Container Resource Settings -->
-        <div class="card">
-            <div class="card-header">
-                🎛️ Node Container Resource Settings
-            </div>
-            <div class="card-body">
-                <div class="alert alert-info" style="margin-bottom: 16px;">
-                    <strong>Note:</strong> These settings apply only to node containers (win, element, elevate, grow, revo, rlink, switch, datagram). The webapp container is not affected.
-                </div>
-                <div class="form-group">
-                    <label for="default-mem-limit">Default Memory Limit (MB)</label>
-                    <input type="number" id="default-mem-limit" value="100" min="50" max="4096" step="50">
-                    <div class="help-text">Default memory limit for new node containers. Current: 100MB</div>
-                </div>
-                <div class="form-group">
-                    <label for="default-memswap-limit">Default Memory + Swap Limit (MB)</label>
-                    <input type="number" id="default-memswap-limit" value="200" min="0" max="8192" step="50">
-                    <div class="help-text">Default memory + swap limit for new node containers. Set to 0 to disable swap. Current: 200MB</div>
-                </div>
-                
-                <div class="form-group" style="margin-top: 24px;">
-                    <label style="display: flex; align-items: center; gap: 8px; font-weight: normal; margin-bottom: 12px;">
-                        <input type="checkbox" id="remove-memory-limit">
-                        <span><strong>Remove memory limits (unlimited)</strong></span>
-                    </label>
-                    <div class="help-text" style="margin-bottom: 16px;">
-                        When checked, removes all memory limits. When unchecked, applies the memory limits specified above.
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label>Apply Settings To</label>
-                    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
-                        <label style="display: flex; align-items: center; gap: 8px; font-weight: normal;">
-                            <input type="radio" name="apply-memory-to" value="new" checked>
-                            <span>New node containers only</span>
-                        </label>
-                        <label style="display: flex; align-items: center; gap: 8px; font-weight: normal;">
-                            <input type="radio" name="apply-memory-to" value="all">
-                            <span>All existing node containers (will restart one by one)</span>
-                        </label>
-                    </div>
-                    <div class="help-text" style="margin-top: 8px;">
-                        Choose whether to apply settings only to new containers or also update all existing containers.
-                    </div>
-                </div>
-                
-                <div id="bulk-memory-progress" style="display: none; margin-top: 16px; padding: 12px; background: var(--bg-color); border-radius: 6px;">
-                    <div style="margin-bottom: 8px; color: var(--text-muted-color);">
-                        <strong>Applying memory settings...</strong><br>
-                        <span id="bulk-memory-current">0</span> / <span id="bulk-memory-total">0</span> node containers updated
-                    </div>
-                    <div style="width: 100%; background: var(--border-color); height: 6px; border-radius: 3px; overflow: hidden;">
-                        <div id="bulk-memory-progress-bar" style="width: 0%; background: var(--primary-color); height: 100%; transition: width 0.3s;"></div>
-                    </div>
-                </div>
-                
-                <button onclick="saveResourceSettings()" class="btn btn-primary" style="margin-top: 12px;" id="save-resource-btn">
-                    💾 Save & Apply Settings
-                </button>
-            </div>
-        </div>
+
 
         <!-- Auto-Restart Monitoring -->
         <div class="card">
@@ -1244,131 +1183,7 @@
         })();
         
         // Resource settings functions
-        async function saveResourceSettings() {
-            const memLimit = document.getElementById('default-mem-limit').value;
-            const memswapLimit = document.getElementById('default-memswap-limit').value;
-            const removeLimit = document.getElementById('remove-memory-limit').checked;
-            const applyTo = document.querySelector('input[name="apply-memory-to"]:checked').value;
-            
-            if (!removeLimit) {
-                if (parseInt(memLimit) < 50 || parseInt(memLimit) > 4096) {
-                    showAlert('Memory limit must be between 50 and 4096 MB', 'error');
-                    return;
-                }
-                
-                // Swap can be 0 (disabled) or between 100-8192 MB
-                if (parseInt(memswapLimit) < 0 || parseInt(memswapLimit) > 8192) {
-                    showAlert('Memory + Swap limit must be 0 (disabled) or between 100 and 8192 MB', 'error');
-                    return;
-                }
-                
-                // Only validate swap >= memory if swap is not 0 (disabled)
-                if (parseInt(memswapLimit) > 0 && parseInt(memswapLimit) < parseInt(memLimit)) {
-                    showAlert('Memory + Swap limit must be greater than or equal to Memory limit (or 0 to disable swap)', 'error');
-                    return;
-                }
-            }
-            
-            // Store in localStorage
-            if (removeLimit) {
-                localStorage.setItem('defaultMemLimit', '0');
-                localStorage.setItem('defaultMemswapLimit', '0');
-            } else {
-                localStorage.setItem('defaultMemLimit', memLimit);
-                localStorage.setItem('defaultMemswapLimit', memswapLimit);
-            }
-            
-            // If applying to all existing containers
-            if (applyTo === 'all') {
-                let actionText;
-                if (removeLimit) {
-                    actionText = 'remove memory limits from all node containers';
-                } else {
-                    const swapText = parseInt(memswapLimit) === 0 ? 'swap disabled' : `${memswapLimit}MB RAM+Swap`;
-                    actionText = `set memory limit to ${memLimit}MB RAM and ${swapText} for all node containers`;
-                }
-                
-                if (!confirm(`This will restart all node containers one by one to ${actionText}. Continue?`)) {
-                    return;
-                }
-                await applyMemoryToAllContainers(removeLimit ? 0 : parseInt(memLimit), removeLimit ? 0 : parseInt(memswapLimit));
-            } else {
-                let limitText;
-                if (removeLimit) {
-                    limitText = 'unlimited (no limits)';
-                } else {
-                    const swapText = parseInt(memswapLimit) === 0 ? 'swap disabled' : `${memswapLimit}MB RAM+Swap`;
-                    limitText = `${memLimit}MB RAM, ${swapText}`;
-                }
-                showAlert(`Resource settings saved: ${limitText} (will apply to new node containers only)`, 'success');
-            }
-        }
-        
-        async function applyMemoryToAllContainers(memLimit, memswapLimit) {
-            const saveBtn = document.getElementById('save-resource-btn');
-            const progressDiv = document.getElementById('bulk-memory-progress');
-            const progressBar = document.getElementById('bulk-memory-progress-bar');
-            const currentSpan = document.getElementById('bulk-memory-current');
-            const totalSpan = document.getElementById('bulk-memory-total');
-            
-            saveBtn.disabled = true;
-            progressDiv.style.display = 'block';
-            
-            try {
-                // Fetch all containers
-                const response = await fetch('/api/containers');
-                const data = await response.json();
-                const containers = data.containers || [];
-                
-                totalSpan.textContent = containers.length;
-                currentSpan.textContent = '0';
-                progressBar.style.width = '0%';
-                
-                let successCount = 0;
-                let failCount = 0;
-                
-                // Update each container one by one
-                for (let i = 0; i < containers.length; i++) {
-                    const container = containers[i];
-                    try {
-                        // Trigger expiration update to recreate container with new limits
-                        const updateResponse = await fetch(`/api/containers/${container.host_id}/${container.id}/update-expiration`, {
-                            method: 'POST',
-                            headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({
-                                expiration_date: container.expiration_date,
-                                mem_limit: memLimit,
-                                memswap_limit: memswapLimit
-                            })
-                        });
-                        
-                        if (updateResponse.ok) {
-                            successCount++;
-                        } else {
-                            failCount++;
-                        }
-                    } catch (error) {
-                        failCount++;
-                        console.error(`Failed to update ${container.name}:`, error);
-                    }
-                    
-                    currentSpan.textContent = i + 1;
-                    progressBar.style.width = `${((i + 1) / containers.length) * 100}%`;
-                }
-                
-                const swapText = memswapLimit === 0 ? 'swap disabled' : `${memswapLimit}MB RAM+Swap`;
-                const limitText = memLimit === 0 ? 'unlimited' : `${memLimit}MB RAM, ${swapText}`;
-                showAlert(`Memory settings applied: ${successCount} containers updated${failCount > 0 ? `, ${failCount} failed` : ''} with ${limitText}`, 'success');
-            } catch (error) {
-                showAlert('Error applying memory settings: ' + error.message, 'error');
-            } finally {
-                saveBtn.disabled = false;
-                setTimeout(() => {
-                    progressDiv.style.display = 'none';
-                }, 3000);
-            }
-        }
-        
+
         // Auto-restart monitoring toggle
         async function toggleAutoRestart(enabled) {
             const statusDiv = document.getElementById('auto-restart-status');
@@ -1388,14 +1203,8 @@
             }
         }
         
-        // Load resource settings on page load
+        // Load auto-restart settings on page load
         (function() {
-            const memLimit = localStorage.getItem('defaultMemLimit') || '100';
-            const memswapLimit = localStorage.getItem('defaultMemswapLimit') || '200';
-            document.getElementById('default-mem-limit').value = memLimit;
-            document.getElementById('default-memswap-limit').value = memswapLimit;
-            
-            // Load auto-restart setting
             const autoRestartEnabled = localStorage.getItem('autoRestartEnabled') === 'true';
             document.getElementById('auto-restart-toggle').checked = autoRestartEnabled;
             if (autoRestartEnabled) {

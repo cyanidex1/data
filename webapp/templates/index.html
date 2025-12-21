@@ -1343,12 +1343,6 @@
                 node_type: nodeType 
             };
             
-            // Add memory limits from localStorage (from admin panel settings)
-            const memLimit = parseInt(localStorage.getItem('defaultMemLimit') || '100');
-            const memswapLimit = parseInt(localStorage.getItem('defaultMemswapLimit') || '200');
-            payload.mem_limit = memLimit;
-            payload.memswap_limit = memswapLimit;
-            
             // Add expiration date if provided
             if (expirationDate) {
                 payload.expiration_date = new Date(expirationDate).toISOString();
