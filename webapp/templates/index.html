@@ -535,6 +535,7 @@
             <div class="card-header">
                 <span class="icon-container"></span> Running Containers <span id="search-results-count" style="font-size: 12px; color: var(--text-muted-color); font-weight: normal;"></span>
                 <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                    <button onclick="checkAuthFailures()" class="btn btn-secondary btn-sm" style="background: var(--warning-color); color: #000;"><span style="margin-right: 4px;">🔒</span> Check Auth Failures</button>
                     <input type="text" id="container-search" placeholder="Search containers..." style="width: 200px; padding: 6px 12px; font-size: 12px;" oninput="filterContainers()">
                     {% if can_edit %}
                     <button onclick="document.getElementById('import-file-input').click()" class="btn btn-secondary btn-sm"><span class="icon-add"></span> Import</button>
@@ -635,6 +636,20 @@
             </div>
             <div class="modal-footer">
                 <button onclick="closeStatsModal()" class="btn btn-secondary">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Auth Failures Modal -->
+    <div id="auth-failures-modal" class="modal">
+        <div class="modal-content" style="max-width: 700px;">
+            <div class="modal-header">🔒 Containers with Authentication Failures</div>
+            <div class="modal-body">
+                <div id="auth-failures-loading" style="text-align: center; padding: 24px; color: var(--text-muted-color);">Checking container logs...</div>
+                <div id="auth-failures-content" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button onclick="closeAuthFailuresModal()" class="btn btn-secondary">Close</button>
             </div>
         </div>
     </div>
@@ -1445,6 +1460,64 @@
         function closeLogsModal() {
             document.getElementById('logs-modal').classList.remove('active');
         }
+
+        async function checkAuthFailures() {
+            const modal = document.getElementById('auth-failures-modal');
+            const loadingDiv = document.getElementById('auth-failures-loading');
+            const contentDiv = document.getElementById('auth-failures-content');
+            
+            // Show modal and loading state
+            modal.classList.add('active');
+            loadingDiv.style.display = 'block';
+            contentDiv.style.display = 'none';
+            
+            try {
+                const response = await fetch('/api/containers/check-auth-failures');
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to check auth failures');
+                }
+                
+                // Hide loading, show content
+                loadingDiv.style.display = 'none';
+                contentDiv.style.display = 'block';
+                
+                if (data.containers.length === 0) {
+                    contentDiv.innerHTML = '<div style="text-align: center; padding: 24px; color: var(--success-color);">✓ No authentication failures detected in running containers!</div>';
+                } else {
+                    let html = '<div style="margin-bottom: 12px; color: var(--text-muted-color);">Found ' + data.containers.length + ' container(s) with authentication errors:</div>';
+                    html += '<table style="width: 100%; border-collapse: collapse;">';
+                    html += '<thead><tr style="border-bottom: 1px solid var(--border-color);"><th style="text-align: left; padding: 8px;">Host</th><th style="text-align: left; padding: 8px;">Container Name</th><th style="text-align: left; padding: 8px;">Status</th></tr></thead>';
+                    html += '<tbody>';
+                    
+                    data.containers.forEach(container => {
+                        html += '<tr style="border-bottom: 1px solid var(--border-color);">';
+                        html += '<td style="padding: 8px;">' + escapeHtml(container.host_name) + '</td>';
+                        html += '<td style="padding: 8px;"><code style="background: var(--bg-color); padding: 2px 6px; border-radius: 3px;">' + escapeHtml(container.container_name) + '</code></td>';
+                        html += '<td style="padding: 8px;"><span class="status-badge status-' + container.status + '">' + container.status + '</span></td>';
+                        html += '</tr>';
+                    });
+                    
+                    html += '</tbody></table>';
+                    contentDiv.innerHTML = html;
+                }
+            } catch (error) {
+                loadingDiv.style.display = 'none';
+                contentDiv.style.display = 'block';
+                contentDiv.innerHTML = '<div style="padding: 16px; color: var(--danger-color);">Error: ' + escapeHtml(error.message) + '</div>';
+            }
+        }
+        
+        function closeAuthFailuresModal() {
+            document.getElementById('auth-failures-modal').classList.remove('active');
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
         
         function showEditExpiration(hostId, containerId, containerName, expirationDate) {
             const modal = document.getElementById('edit-expiration-modal');
@@ -1515,9 +1588,11 @@
             const logsModal = document.getElementById('logs-modal');
             const statsModal = document.getElementById('stats-modal');
             const editExpirationModal = document.getElementById('edit-expiration-modal');
+            const authFailuresModal = document.getElementById('auth-failures-modal');
             if (event.target === logsModal) closeLogsModal();
             if (event.target === statsModal) closeStatsModal();
             if (event.target === editExpirationModal) closeEditExpirationModal();
+            if (event.target === authFailuresModal) closeAuthFailuresModal();
         }
     </script>
 </body>

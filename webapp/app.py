@@ -1324,6 +1324,54 @@ def get_container_logs(host_id, container_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/containers/check-auth-failures', methods=['GET'])
+@login_required
+def check_auth_failures():
+    """Check all containers for authentication failures in logs - requires view permission"""
+    if not current_user.can_view():
+        return jsonify({'error': 'View privileges required'}), 403
+    
+    containers_with_auth_failures = []
+    
+    for host in host_manager.hosts:
+        client = host_manager.get_client(host['id'])
+        if not client:
+            continue
+        
+        try:
+            containers = client.containers.list(all=False)  # Only running containers
+            for container in containers:
+                try:
+                    # Get last 100 lines of logs
+                    logs = container.logs(tail=100, stderr=True, stdout=True).decode('utf-8', errors='ignore')
+                    
+                    # Check for authentication-related errors
+                    auth_pattern = re.compile(
+                        r'auth(entication)?\s+(fail|error|denied)|'
+                        r'invalid\s+(user|password)|'
+                        r'login\s+failed|'
+                        r'access\s+denied',
+                        re.IGNORECASE
+                    )
+                    
+                    if auth_pattern.search(logs):
+                        containers_with_auth_failures.append({
+                            'host_id': host['id'],
+                            'host_name': host['name'],
+                            'container_id': container.id[:12],
+                            'container_name': container.name,
+                            'status': container.status
+                        })
+                except Exception as e:
+                    print(f"Error checking logs for container {container.name}: {e}")
+                    continue
+        except Exception as e:
+            print(f"Error listing containers on host {host['name']}: {e}")
+            continue
+    
+    return jsonify({'containers': containers_with_auth_failures})
+
+
 @app.route('/api/containers/<host_id>/<container_id>/update-expiration', methods=['POST'])
 @login_required
 def update_container_expiration(host_id, container_id):
