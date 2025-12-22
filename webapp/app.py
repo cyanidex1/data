@@ -1333,6 +1333,15 @@ def check_auth_failures():
     
     containers_with_auth_failures = []
     
+    # Compile regex pattern once for efficiency
+    auth_pattern = re.compile(
+        r'auth(entication)?\s+(fail|error|denied)|'
+        r'invalid\s+(user|password)|'
+        r'login\s+failed|'
+        r'access\s+denied',
+        re.IGNORECASE
+    )
+    
     for host in host_manager.hosts:
         client = host_manager.get_client(host['id'])
         if not client:
@@ -1343,17 +1352,9 @@ def check_auth_failures():
             for container in containers:
                 try:
                     # Get last 100 lines of logs
-                    logs = container.logs(tail=100, stderr=True, stdout=True).decode('utf-8', errors='ignore')
+                    logs = container.logs(tail=100, stderr=True, stdout=True).decode('utf-8', errors='replace')
                     
                     # Check for authentication-related errors
-                    auth_pattern = re.compile(
-                        r'auth(entication)?\s+(fail|error|denied)|'
-                        r'invalid\s+(user|password)|'
-                        r'login\s+failed|'
-                        r'access\s+denied',
-                        re.IGNORECASE
-                    )
-                    
                     if auth_pattern.search(logs):
                         containers_with_auth_failures.append({
                             'host_id': host['id'],
@@ -1363,10 +1364,10 @@ def check_auth_failures():
                             'status': container.status
                         })
                 except Exception as e:
-                    print(f"Error checking logs for container {container.name}: {e}")
+                    app.logger.error(f"Error checking logs for container {container.name}: {e}")
                     continue
         except Exception as e:
-            print(f"Error listing containers on host {host['name']}: {e}")
+            app.logger.error(f"Error listing containers on host {host['name']}: {e}")
             continue
     
     return jsonify({'containers': containers_with_auth_failures})
