@@ -1495,7 +1495,7 @@
                         html += '<tr style="border-bottom: 1px solid var(--border-color);">';
                         html += '<td style="padding: 8px;">' + escapeHtml(container.host_name) + '</td>';
                         html += '<td style="padding: 8px;"><code style="background: var(--bg-color); padding: 2px 6px; border-radius: 3px;">' + escapeHtml(container.container_name) + '</code></td>';
-                        html += '<td style="padding: 8px;"><span class="status-badge status-' + container.status + '">' + container.status + '</span></td>';
+                        html += '<td style="padding: 8px;"><span class="status-badge status-' + escapeHtml(container.status) + '">' + escapeHtml(container.status) + '</span></td>';
                         html += '</tr>';
                     });
                     
