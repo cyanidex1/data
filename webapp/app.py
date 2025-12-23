@@ -944,7 +944,9 @@ def generate_agent_key():
     
     try:
         import secrets
-        # Generate a secure random API key (32 bytes = 64 hex characters)
+        # Generate a secure random API key using cryptographically strong randomness
+        # 32 bytes = 64 hex characters = 256 bits of entropy
+        # This provides excellent security against brute-force attacks
         api_key = secrets.token_hex(32)
         
         return jsonify({

@@ -51,6 +51,9 @@ def init_socketio(app):
     # Register WebSocket event handlers
     register_handlers(socketio)
     
+    # Start cleanup thread
+    start_cleanup_thread()
+    
     logger.info("Flask-SocketIO initialized")
     return socketio
 
@@ -339,7 +342,15 @@ def cleanup_old_responses():
         time.sleep(60)
 
 
-# Start cleanup thread
-cleanup_thread = threading.Thread(target=cleanup_old_responses, daemon=True)
-cleanup_thread.start()
-logger.info("Started command response cleanup thread")
+# Cleanup thread management
+_cleanup_thread = None
+_cleanup_lock = threading.Lock()
+
+def start_cleanup_thread():
+    """Start the cleanup thread if not already started (thread-safe)"""
+    global _cleanup_thread
+    with _cleanup_lock:
+        if _cleanup_thread is None:
+            _cleanup_thread = threading.Thread(target=cleanup_old_responses, daemon=True)
+            _cleanup_thread.start()
+            logger.info("Started command response cleanup thread")

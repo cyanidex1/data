@@ -30,7 +30,7 @@ class DatagramAgent:
     Connects to control plane via WebSocket and executes commands.
     """
     
-    def __init__(self, control_plane_url, api_key, host_id):
+    def __init__(self, control_plane_url, api_key, host_id, platform='linux/amd64'):
         """
         Initialize the Datagram Agent.
         
@@ -38,10 +38,12 @@ class DatagramAgent:
             control_plane_url: URL of the control plane (e.g., http://localhost:5000)
             api_key: Authentication key for the agent
             host_id: Unique identifier for this host
+            platform: Docker platform architecture (e.g., 'linux/amd64', 'linux/arm64')
         """
         self.control_plane_url = control_plane_url.rstrip('/')
         self.api_key = api_key
         self.host_id = host_id
+        self.platform = platform
         self.ws = None
         self.running = True
         self.reconnect_delay = 5  # Initial reconnect delay in seconds
@@ -68,6 +70,9 @@ class DatagramAgent:
             logger.info(f"Connecting to control plane: {ws_url}")
             
             # Create WebSocket connection
+            # Note: API key is passed in headers for initial authentication.
+            # This is standard practice for WebSocket authentication and is secure
+            # when using wss:// (TLS encrypted connection) in production.
             self.ws = websocket.WebSocketApp(
                 ws_url,
                 on_message=self.on_message,
@@ -260,7 +265,7 @@ class DatagramAgent:
                 image=image_name,
                 name=container_name,
                 environment=env_vars,
-                platform='linux/amd64',
+                platform=self.platform,
                 detach=True,
                 restart_policy={'Name': 'on-failure', 'MaximumRetryCount': 3}
             )
@@ -584,6 +589,7 @@ def main():
     control_plane_url = os.environ.get('CONTROL_PLANE_URL')
     api_key = os.environ.get('AGENT_API_KEY')
     host_id = os.environ.get('HOST_ID')
+    platform = os.environ.get('PLATFORM', 'linux/amd64')  # Default to amd64, support arm64
     
     # Validate configuration
     if not control_plane_url:
@@ -601,9 +607,10 @@ def main():
     logger.info(f"Starting Datagram Agent")
     logger.info(f"Control Plane: {control_plane_url}")
     logger.info(f"Host ID: {host_id}")
+    logger.info(f"Platform: {platform}")
     
     # Create and run agent
-    agent = DatagramAgent(control_plane_url, api_key, host_id)
+    agent = DatagramAgent(control_plane_url, api_key, host_id, platform)
     agent.run()
 
 

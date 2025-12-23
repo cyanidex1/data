@@ -14,6 +14,8 @@ services:
       - AGENT_API_KEY=${AGENT_API_KEY:-change-this-api-key}
       # Unique host identifier
       - HOST_ID=${HOST_ID:-agent-host-1}
+      # Platform architecture (linux/amd64 or linux/arm64)
+      - PLATFORM=${PLATFORM:-linux/amd64}
     # Memory limit: 50MB
     mem_limit: 50m
     restart: unless-stopped
