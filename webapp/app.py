@@ -1554,47 +1554,74 @@ def get_container_logs(host_id, container_id):
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/containers/<host_id>/<container_id>/scan-auth-errors', methods=['GET'])
+@app.route('/api/containers/scan-all-auth-errors', methods=['GET'])
 @login_required
-def scan_auth_errors(host_id, container_id):
-    """Scan container logs for authentication errors - requires view permission"""
+def scan_all_auth_errors():
+    """Scan all containers for authentication errors - requires view permission"""
     if not current_user.can_view():
         return jsonify({'error': 'View privileges required'}), 403
     
-    try:
-        client = host_manager.get_client(int(host_id))
+    # Authentication error pattern with word boundaries for precision
+    auth_error_pattern = re.compile(
+        r'\b(?:auth(?:entication)?)\s+(?:fail(?:ed|ure)?|error|denied)\b|'
+        r'\binvalid\s+(?:user(?:name)?|password)\b|'
+        r'\blogin\s+(?:fail(?:ed|ure)?)\b|'
+        r'\baccess\s+denied\b',
+        re.IGNORECASE
+    )
+    
+    containers_with_errors = []
+    total_scanned = 0
+    
+    # Scan all hosts
+    for host in host_manager.hosts:
+        client = host_manager.get_client(host['id'])
         if not client:
-            return jsonify({'error': 'Could not connect to Docker host'}), 500
+            continue
         
-        container = client.containers.get(container_id)
-        # Get more logs for scanning (last 500 lines)
-        logs = container.logs(tail=500).decode('utf-8', errors='ignore')
-        
-        # Authentication error pattern with word boundaries for precision
-        # Matches: auth fail/failure/error/denied, authentication fail/failure/error/denied,
-        # invalid user/username/password, login failed/failure, access denied
-        auth_error_pattern = re.compile(
-            r'\b(?:auth(?:entication)?)\s+(?:fail(?:ed|ure)?|error|denied)\b|'
-            r'\binvalid\s+(?:user(?:name)?|password)\b|'
-            r'\blogin\s+(?:fail(?:ed|ure)?)\b|'
-            r'\baccess\s+denied\b',
-            re.IGNORECASE
-        )
-        
-        # Scan logs line by line
-        matching_lines = []
-        for line in logs.split('\n'):
-            if auth_error_pattern.search(line):
-                matching_lines.append(line.strip())
-        
-        # Return results
-        return jsonify({
-            'total_errors': len(matching_lines),
-            'sample_errors': matching_lines[:10],  # Return first 10 matches
-            'has_more': len(matching_lines) > 10
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        try:
+            containers = client.containers.list(all=True)
+            for container in containers:
+                # Skip the webapp container itself
+                if container.name == 'datagram-control-panel':
+                    continue
+                
+                total_scanned += 1
+                
+                try:
+                    # Get logs (last 500 lines)
+                    logs = container.logs(tail=500).decode('utf-8', errors='ignore')
+                    
+                    # Scan logs line by line
+                    matching_lines = []
+                    for line in logs.split('\n'):
+                        if auth_error_pattern.search(line):
+                            matching_lines.append(line.strip())
+                    
+                    # If errors found, add to results
+                    if matching_lines:
+                        containers_with_errors.append({
+                            'host_id': host['id'],
+                            'host_name': host['name'],
+                            'container_id': container.id[:12],
+                            'container_name': container.name,
+                            'status': container.status,
+                            'total_errors': len(matching_lines),
+                            'sample_errors': matching_lines[:5]  # First 5 samples
+                        })
+                except Exception as e:
+                    # Skip containers that fail to fetch logs
+                    print(f"Error scanning container {container.name}: {e}")
+                    continue
+        except Exception as e:
+            print(f"Error scanning host {host['name']}: {e}")
+            continue
+    
+    return jsonify({
+        'total_containers_scanned': total_scanned,
+        'containers_with_errors': len(containers_with_errors),
+        'results': containers_with_errors
+    })
 
 
 @app.route('/api/containers/<host_id>/<container_id>/update-expiration', methods=['POST'])
