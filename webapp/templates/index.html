@@ -62,6 +62,7 @@
         .icon-logs::before { content: '≡'; color: var(--text-muted-color); }
         .icon-stats::before { content: '◉'; color: var(--primary-color); }
         .icon-edit::before { content: '✎'; color: var(--warning-color); }
+        .icon-scan::before { content: '🔍'; color: var(--warning-color); font-size: 12px; }
         
         
         .header {
@@ -577,6 +578,7 @@
                     <input type="file" id="import-file-input" accept=".csv" style="display: none;" onchange="importKeys(this)">
                     {% endif %}
                     <button onclick="exportKeys()" class="btn btn-secondary btn-sm"><span class="icon-export"></span> Export</button>
+                    <button onclick="scanAllAuthErrors()" class="btn btn-secondary btn-sm"><span class="icon-scan"></span> Scan Auth Errors</button>
                     <button onclick="refreshContainers()" class="btn btn-secondary btn-sm"><span class="icon-refresh"></span> Refresh</button>
                 </div>
             </div>
@@ -722,6 +724,32 @@
             <div class="modal-footer">
                 <button id="bulk-edit-cancel-btn" onclick="closeBulkEditExpirationModal()" class="btn btn-secondary">Cancel</button>
                 <button id="bulk-edit-save-btn" onclick="saveBulkExpiration()" class="btn btn-primary">Update All</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Auth Error Scan Modal -->
+    <div id="auth-scan-modal" class="modal">
+        <div class="modal-content" style="max-width: 900px;">
+            <div class="modal-header"><span class="icon-scan"></span> Authentication Error Scan Results</div>
+            <div class="modal-body">
+                <div id="auth-scan-loading" style="text-align: center; padding: 24px; color: var(--text-muted-color);">Scanning all containers...</div>
+                <div id="auth-scan-content" style="display: none;">
+                    <div style="margin-bottom: 16px;">
+                        <p style="font-size: 14px; color: var(--text-muted-color);">
+                            Found <strong id="auth-scan-count" style="color: var(--danger-color);">0</strong> container(s) with authentication errors out of <span id="auth-scan-total">0</span> scanned.
+                        </p>
+                    </div>
+                    <div id="auth-scan-results" style="max-height: 500px; overflow-y: auto;">
+                        <!-- Container list will be inserted here -->
+                    </div>
+                    <div id="auth-scan-no-errors" style="display: none; text-align: center; padding: 24px; color: var(--success-color);">
+                        ✓ No authentication errors found in any container
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button onclick="closeAuthScanModal()" class="btn btn-secondary">Close</button>
             </div>
         </div>
     </div>
@@ -1705,15 +1733,183 @@
             }
         }
         
+        // Store current scan context for view full logs button
+        let currentScanHostId = null;
+        let currentScanContainerId = null;
+        
+        async function scanAllAuthErrors() {
+            const modal = document.getElementById('auth-scan-modal');
+            const loading = document.getElementById('auth-scan-loading');
+            const content = document.getElementById('auth-scan-content');
+            const resultsDiv = document.getElementById('auth-scan-results');
+            const noErrorsDiv = document.getElementById('auth-scan-no-errors');
+            const countSpan = document.getElementById('auth-scan-count');
+            const totalSpan = document.getElementById('auth-scan-total');
+            
+            // Show modal with loading state
+            loading.style.display = 'block';
+            content.style.display = 'none';
+            modal.classList.add('active');
+            
+            try {
+                const response = await fetch('/api/containers/scan-all-auth-errors');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    countSpan.textContent = data.containers_with_errors;
+                    totalSpan.textContent = data.total_containers_scanned;
+                    
+                    if (data.containers_with_errors === 0) {
+                        // No errors found
+                        noErrorsDiv.style.display = 'block';
+                        resultsDiv.style.display = 'none';
+                    } else {
+                        // Errors found - display container list
+                        noErrorsDiv.style.display = 'none';
+                        resultsDiv.style.display = 'block';
+                        
+                        // Build container list using safe DOM manipulation
+                        resultsDiv.innerHTML = ''; // Clear previous content
+                        
+                        data.results.forEach((container, index) => {
+                            const containerCard = document.createElement('div');
+                            containerCard.style.marginBottom = '16px';
+                            containerCard.style.padding = '12px';
+                            containerCard.style.background = 'var(--card-bg-color)';
+                            containerCard.style.borderRadius = '6px';
+                            containerCard.style.borderLeft = '4px solid var(--danger-color)';
+                            
+                            // Container header
+                            const header = document.createElement('div');
+                            header.style.display = 'flex';
+                            header.style.justifyContent = 'space-between';
+                            header.style.alignItems = 'center';
+                            header.style.marginBottom = '8px';
+                            
+                            const title = document.createElement('div');
+                            const nameSpan = document.createElement('strong');
+                            nameSpan.textContent = container.container_name;
+                            nameSpan.style.color = 'var(--text-color)';
+                            title.appendChild(nameSpan);
+                            
+                            const hostSpan = document.createElement('span');
+                            hostSpan.textContent = ` (${container.host_name})`;
+                            hostSpan.style.color = 'var(--text-muted-color)';
+                            hostSpan.style.fontSize = '12px';
+                            title.appendChild(hostSpan);
+                            
+                            const errorBadge = document.createElement('span');
+                            errorBadge.textContent = `${container.total_errors} error${container.total_errors > 1 ? 's' : ''}`;
+                            errorBadge.style.padding = '2px 8px';
+                            errorBadge.style.borderRadius = '12px';
+                            errorBadge.style.fontSize = '11px';
+                            errorBadge.style.fontWeight = '500';
+                            errorBadge.style.background = 'var(--status-exited-bg)';
+                            errorBadge.style.color = 'var(--danger-color)';
+                            
+                            header.appendChild(title);
+                            header.appendChild(errorBadge);
+                            containerCard.appendChild(header);
+                            
+                            // Sample errors
+                            if (container.sample_errors && container.sample_errors.length > 0) {
+                                const errorsContainer = document.createElement('div');
+                                errorsContainer.style.fontFamily = 'monospace';
+                                errorsContainer.style.fontSize = '11px';
+                                errorsContainer.style.lineHeight = '1.5';
+                                
+                                container.sample_errors.forEach((error) => {
+                                    const errorLine = document.createElement('div');
+                                    errorLine.style.padding = '4px';
+                                    errorLine.style.marginBottom = '2px';
+                                    errorLine.style.background = 'var(--bg-color)';
+                                    errorLine.style.color = 'var(--danger-color)';
+                                    errorLine.style.borderRadius = '3px';
+                                    errorLine.textContent = error;
+                                    errorsContainer.appendChild(errorLine);
+                                });
+                                
+                                if (container.total_errors > container.sample_errors.length) {
+                                    const moreText = document.createElement('div');
+                                    moreText.style.padding = '4px';
+                                    moreText.style.marginTop = '4px';
+                                    moreText.style.color = 'var(--text-muted-color)';
+                                    moreText.style.fontSize = '10px';
+                                    moreText.style.fontStyle = 'italic';
+                                    moreText.textContent = `... and ${container.total_errors - container.sample_errors.length} more`;
+                                    errorsContainer.appendChild(moreText);
+                                }
+                                
+                                containerCard.appendChild(errorsContainer);
+                            }
+                            
+                            // View logs button
+                            const btnContainer = document.createElement('div');
+                            btnContainer.style.marginTop = '8px';
+                            
+                            const viewLogsBtn = document.createElement('button');
+                            viewLogsBtn.className = 'btn btn-secondary btn-sm';
+                            viewLogsBtn.textContent = 'View Logs';
+                            viewLogsBtn.style.fontSize = '11px';
+                            viewLogsBtn.onclick = () => {
+                                closeAuthScanModal();
+                                showLogs(container.host_id, container.container_id);
+                            };
+                            
+                            btnContainer.appendChild(viewLogsBtn);
+                            containerCard.appendChild(btnContainer);
+                            
+                            resultsDiv.appendChild(containerCard);
+                        });
+                    }
+                    
+                    loading.style.display = 'none';
+                    content.style.display = 'block';
+                } else {
+                    // Clear loading div safely
+                    while (loading.firstChild) {
+                        loading.removeChild(loading.firstChild);
+                    }
+                    const errorDiv = document.createElement('div');
+                    errorDiv.style.color = 'var(--danger-color)';
+                    errorDiv.textContent = 'Error scanning containers: ' + (data.error || 'Unknown error');
+                    loading.appendChild(errorDiv);
+                }
+            } catch (error) {
+                // Clear loading div safely
+                while (loading.firstChild) {
+                    loading.removeChild(loading.firstChild);
+                }
+                const errorDiv = document.createElement('div');
+                errorDiv.style.color = 'var(--danger-color)';
+                errorDiv.textContent = 'Error scanning containers: ' + error.message;
+                loading.appendChild(errorDiv);
+            }
+        }
+        
+        function closeAuthScanModal() {
+            document.getElementById('auth-scan-modal').classList.remove('active');
+        }
+        
+        function viewFullLogs() {
+            // Close scan modal and open logs modal
+            closeAuthScanModal();
+            if (currentScanHostId && currentScanContainerId) {
+                showLogs(currentScanHostId, currentScanContainerId);
+            }
+        }
+        
         window.onclick = function(event) {
             const logsModal = document.getElementById('logs-modal');
             const statsModal = document.getElementById('stats-modal');
             const editExpirationModal = document.getElementById('edit-expiration-modal');
             const bulkEditExpirationModal = document.getElementById('bulk-edit-expiration-modal');
+            const authScanModal = document.getElementById('auth-scan-modal');
             if (event.target === logsModal) closeLogsModal();
             if (event.target === statsModal) closeStatsModal();
             if (event.target === editExpirationModal) closeEditExpirationModal();
             if (event.target === bulkEditExpirationModal) closeBulkEditExpirationModal();
+            if (event.target === authScanModal) closeAuthScanModal();
         }
     </script>
 </body>
