@@ -1746,21 +1746,42 @@
             const countSpan = document.getElementById('auth-scan-count');
             const totalSpan = document.getElementById('auth-scan-total');
             
+            // Get the currently displayed containers (respects search filter)
+            const containersToScan = getDisplayedContainers();
+            
             // Show modal with loading state
             loading.style.display = 'block';
             content.style.display = 'none';
             modal.classList.add('active');
+            
+            // Update loading message to show what's being scanned
+            const searchTerm = document.getElementById('container-search').value.trim();
+            if (searchTerm) {
+                loading.textContent = `Scanning ${containersToScan.length} filtered container(s)...`;
+            } else {
+                loading.textContent = 'Scanning all containers...';
+            }
             
             try {
                 const response = await fetch('/api/containers/scan-all-auth-errors');
                 const data = await response.json();
                 
                 if (response.ok) {
-                    countSpan.textContent = data.containers_with_errors;
-                    totalSpan.textContent = data.total_containers_scanned;
+                    // Filter results to only include containers that are currently displayed
+                    const displayedContainerKeys = new Set(
+                        containersToScan.map(c => `${c.host_id}:${c.id}:${c.name}`)
+                    );
                     
-                    if (data.containers_with_errors === 0) {
-                        // No errors found
+                    const filteredResults = data.results.filter(container => {
+                        const key = `${container.host_id}:${container.container_id}:${container.container_name}`;
+                        return displayedContainerKeys.has(key);
+                    });
+                    
+                    countSpan.textContent = filteredResults.length;
+                    totalSpan.textContent = containersToScan.length;
+                    
+                    if (filteredResults.length === 0) {
+                        // No errors found in displayed containers
                         noErrorsDiv.style.display = 'block';
                         resultsDiv.style.display = 'none';
                     } else {
@@ -1771,7 +1792,7 @@
                         // Build container list using safe DOM manipulation
                         resultsDiv.innerHTML = ''; // Clear previous content
                         
-                        data.results.forEach((container, index) => {
+                        filteredResults.forEach((container, index) => {
                             const containerCard = document.createElement('div');
                             containerCard.style.marginBottom = '16px';
                             containerCard.style.padding = '12px';
