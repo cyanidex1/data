@@ -740,6 +740,17 @@
                             Found <strong id="auth-scan-count" style="color: var(--danger-color);">0</strong> container(s) with authentication errors out of <span id="auth-scan-total">0</span> scanned.
                         </p>
                     </div>
+                    <!-- Bulk Actions Bar for Auth Scan Results -->
+                    {% if can_edit %}
+                    <div id="auth-scan-bulk-actions" style="display: none; padding: 12px; margin-bottom: 12px; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 6px;">
+                        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                            <span id="auth-scan-selected-count" style="font-size: 14px; color: var(--text-muted-color);">0 selected</span>
+                            <button onclick="bulkRemoveAuthErrorContainers()" class="btn btn-danger btn-sm"><span class="icon-remove"></span> Remove Selected</button>
+                            <button onclick="bulkRestartAuthErrorContainers()" class="btn btn-secondary btn-sm"><span class="icon-restart"></span> Restart Selected</button>
+                            <button onclick="clearAuthScanSelection()" class="btn btn-secondary btn-sm">Clear Selection</button>
+                        </div>
+                    </div>
+                    {% endif %}
                     <div id="auth-scan-results" style="max-height: 500px; overflow-y: auto;">
                         <!-- Container list will be inserted here -->
                     </div>
@@ -759,6 +770,7 @@
         let allContainers = []; // Store all containers for filtering
         let nodeTypes = {}; // Store node types configuration
         let selectedContainers = new Set(); // Store selected container keys (host_id:container_id)
+        let selectedAuthErrorContainers = new Set(); // Store selected containers from auth error scan
         const canEdit = {{ 'true' if can_edit else 'false' }};
         
         // Configuration constants
@@ -1800,12 +1812,37 @@
                             containerCard.style.borderRadius = '6px';
                             containerCard.style.borderLeft = '4px solid var(--danger-color)';
                             
-                            // Container header
+                            const containerKey = `${container.host_id}:${container.container_id}`;
+                            const isSelected = selectedAuthErrorContainers.has(containerKey);
+                            
+                            if (isSelected) {
+                                containerCard.style.background = 'rgba(88, 166, 255, 0.1)';
+                            }
+                            
+                            // Container header with checkbox
                             const header = document.createElement('div');
                             header.style.display = 'flex';
                             header.style.justifyContent = 'space-between';
                             header.style.alignItems = 'center';
                             header.style.marginBottom = '8px';
+                            
+                            // Left side: checkbox and title
+                            const leftSide = document.createElement('div');
+                            leftSide.style.display = 'flex';
+                            leftSide.style.alignItems = 'center';
+                            leftSide.style.gap = '8px';
+                            
+                            // Add checkbox if user can edit
+                            if (canEdit) {
+                                const checkbox = document.createElement('input');
+                                checkbox.type = 'checkbox';
+                                checkbox.checked = isSelected;
+                                checkbox.style.width = '16px';
+                                checkbox.style.height = '16px';
+                                checkbox.style.cursor = 'pointer';
+                                checkbox.onchange = () => toggleAuthErrorContainerSelection(containerKey, container.container_name, checkbox, containerCard);
+                                leftSide.appendChild(checkbox);
+                            }
                             
                             const title = document.createElement('div');
                             const nameSpan = document.createElement('strong');
@@ -1819,6 +1856,8 @@
                             hostSpan.style.fontSize = '12px';
                             title.appendChild(hostSpan);
                             
+                            leftSide.appendChild(title);
+                            
                             const errorBadge = document.createElement('span');
                             errorBadge.textContent = `${container.total_errors} error${container.total_errors > 1 ? 's' : ''}`;
                             errorBadge.style.padding = '2px 8px';
@@ -1828,7 +1867,7 @@
                             errorBadge.style.background = 'var(--status-exited-bg)';
                             errorBadge.style.color = 'var(--danger-color)';
                             
-                            header.appendChild(title);
+                            header.appendChild(leftSide);
                             header.appendChild(errorBadge);
                             containerCard.appendChild(header);
                             
@@ -1910,6 +1949,118 @@
         
         function closeAuthScanModal() {
             document.getElementById('auth-scan-modal').classList.remove('active');
+            // Clear selection when closing modal
+            clearAuthScanSelection();
+        }
+        
+        function toggleAuthErrorContainerSelection(containerKey, containerName, checkbox, containerCard) {
+            if (checkbox.checked) {
+                selectedAuthErrorContainers.add(containerKey);
+                containerCard.style.background = 'rgba(88, 166, 255, 0.1)';
+            } else {
+                selectedAuthErrorContainers.delete(containerKey);
+                containerCard.style.background = 'var(--card-bg-color)';
+            }
+            updateAuthScanBulkActionsBar();
+        }
+        
+        function updateAuthScanBulkActionsBar() {
+            const bulkActionsBar = document.getElementById('auth-scan-bulk-actions');
+            if (!bulkActionsBar) return;
+            
+            const selectedCount = selectedAuthErrorContainers.size;
+            const selectedCountSpan = document.getElementById('auth-scan-selected-count');
+            
+            if (selectedCount > 0) {
+                bulkActionsBar.style.display = 'block';
+                selectedCountSpan.textContent = `${selectedCount} selected`;
+            } else {
+                bulkActionsBar.style.display = 'none';
+            }
+        }
+        
+        function clearAuthScanSelection() {
+            selectedAuthErrorContainers.clear();
+            updateAuthScanBulkActionsBar();
+            // Re-render if modal is still open
+            const modal = document.getElementById('auth-scan-modal');
+            if (modal.classList.contains('active')) {
+                // Just update the UI without re-scanning
+                const checkboxes = document.querySelectorAll('#auth-scan-results input[type="checkbox"]');
+                const cards = document.querySelectorAll('#auth-scan-results > div');
+                checkboxes.forEach(cb => cb.checked = false);
+                cards.forEach(card => card.style.background = 'var(--card-bg-color)');
+            }
+        }
+        
+        async function bulkRemoveAuthErrorContainers() {
+            if (selectedAuthErrorContainers.size === 0) return;
+            
+            const count = selectedAuthErrorContainers.size;
+            if (!confirm(`Remove ${count} container(s) with authentication errors? This action cannot be undone.`)) return;
+            
+            const keys = Array.from(selectedAuthErrorContainers);
+            let successCount = 0;
+            let failCount = 0;
+            
+            for (const key of keys) {
+                const [hostId, containerId] = key.split(':');
+                try {
+                    const response = await fetch(`/api/containers/${hostId}/${containerId}/remove`, { method: 'DELETE' });
+                    if (response.ok) {
+                        successCount++;
+                    } else {
+                        failCount++;
+                    }
+                } catch (error) {
+                    failCount++;
+                }
+            }
+            
+            if (successCount > 0) {
+                showAlert(`Removed ${successCount} container(s)${failCount > 0 ? `, ${failCount} failed` : ''}`, 'success');
+            } else if (failCount > 0) {
+                showAlert(`Failed to remove ${failCount} container(s)`, 'error');
+            }
+            
+            clearAuthScanSelection();
+            closeAuthScanModal();
+            refreshContainers();
+        }
+        
+        async function bulkRestartAuthErrorContainers() {
+            if (selectedAuthErrorContainers.size === 0) return;
+            
+            const count = selectedAuthErrorContainers.size;
+            if (!confirm(`Restart ${count} container(s) with authentication errors?`)) return;
+            
+            const keys = Array.from(selectedAuthErrorContainers);
+            let successCount = 0;
+            let failCount = 0;
+            
+            for (const key of keys) {
+                const [hostId, containerId] = key.split(':');
+                try {
+                    const response = await fetch(`/api/containers/${hostId}/${containerId}/restart`, { method: 'POST' });
+                    if (response.ok) {
+                        successCount++;
+                    } else {
+                        failCount++;
+                    }
+                } catch (error) {
+                    failCount++;
+                }
+            }
+            
+            if (successCount > 0) {
+                showAlert(`Restarted ${successCount} container(s)${failCount > 0 ? `, ${failCount} failed` : ''}`, 'success');
+            } else if (failCount > 0) {
+                showAlert(`Failed to restart ${failCount} container(s)`, 'error');
+            }
+            
+            clearAuthScanSelection();
+            closeAuthScanModal();
+            refreshContainers();
         }
         
         function viewFullLogs() {
