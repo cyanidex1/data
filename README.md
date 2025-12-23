@@ -39,6 +39,63 @@ That's it! You can now start managing your Datagram nodes through the web interf
 - 🔄 **Auto-Refresh**: Dashboard automatically refreshes every 10 seconds
 - ⚡ **High Performance**: Optimized caching and parallel processing for managing 100+ containers efficiently
 - 🐳 **Docker Integration**: Works seamlessly with the existing `unhealthy.sh` cron job
+- 🤖 **Agent-Based Architecture**: Optional lightweight agents for remote multi-host management
+
+## 🤖 Agent-Based Architecture (NEW!)
+
+The control panel now supports two deployment modes:
+
+### Traditional Mode (Docker Socket)
+- Control panel and containers on the same host
+- Direct Docker socket access
+- Simple setup, perfect for single-host deployments
+
+### Agent Mode (Recommended for Production)
+- Control panel hosted externally (Railway, Render, etc.)
+- Lightweight agents (50MB) on each container host
+- WebSocket-based communication
+- **Benefits:**
+  - 🌐 **External Hosting**: Host control plane anywhere (cloud platforms, VPS)
+  - 🔗 **Multi-Host**: Manage containers across multiple physical hosts
+  - 🔒 **Better Security**: No Docker socket exposure to internet
+  - 📈 **Scalability**: Easily add new hosts without VPN or firewall changes
+  - 📊 **Real-Time Monitoring**: Health metrics reported every 30 seconds
+  - 🔄 **Auto-Reconnection**: Agents automatically reconnect if connection drops
+
+### Quick Start with Agent Mode
+
+1. **Set up Control Plane** (can be hosted externally):
+   ```bash
+   # Generate API keys
+   export AGENT_API_KEYS=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+   
+   # Start control plane
+   docker-compose up -d
+   ```
+
+2. **Deploy Agent on Remote Host**:
+   ```bash
+   # On your remote host (e.g., Proxmox server)
+   cat > .env << EOF
+   CONTROL_PLANE_URL=https://your-control-plane.example.com
+   AGENT_API_KEY=your-generated-key
+   HOST_ID=production-server-1
+   EOF
+   
+   docker-compose -f docker-compose-agent.yml up -d
+   ```
+
+3. **Configure Host in UI**:
+   - Log in to control panel
+   - Go to Admin Panel → Hosts
+   - Edit your host and set `connection_type` to `agent`
+   - Add the `agent_api_key`
+   - Agent will show as "Connected" with green indicator
+
+**Learn More:**
+- 📖 [Agent Setup Guide](docs/AGENT_SETUP.md) - Detailed installation and configuration
+- 🔄 [Migration Guide](docs/MIGRATION_GUIDE.md) - Migrate from Docker socket to agent mode
+- 🏗️ Architecture diagram and comparison in guides
 
 ## Detailed Installation Guide
 
