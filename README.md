@@ -177,19 +177,16 @@ The web panel provides real-time monitoring and manual control, while the cron j
 │   ├── start.sh               # Script for starting nodes
 │   └── unhealthy.sh           # Cron script for auto-recovery
 ├── docker-compose.yml          # Compose file for control panel
-├── dockerfiles/               # Alternative node Dockerfiles
-├── element/                   # Element node files
-├── elevate/                   # Elevate node files
-├── grow/                      # Grow node files
-├── revo/                      # Revo node files
-├── rlink/                     # RLink node files
-├── switch/                    # Switch node files
-├── win/                       # Win node files
+├── dockerfiles/               # Node type Dockerfiles (element, elevate, grow, revo, rlink, switch, win)
+│   ├── *-entrypoint.sh        # Alpine-based entrypoint scripts for each node type
+│   └── *.Dockerfile           # Alpine-based Dockerfiles for each node type
 ├── webapp/
 │   ├── Dockerfile             # Control panel Dockerfile
 │   ├── requirements.txt       # Python dependencies
 │   ├── app.py                 # Flask application
-│   └── templates/
+│   ├── startup.sh             # Startup script that builds node images
+│   ├── static/                # Static assets (CSS, JS)
+│   └── templates/             # HTML templates
 │       └── index.html         # Web interface
 └── data/
     └── docker_hosts.json      # Persistent host configuration
