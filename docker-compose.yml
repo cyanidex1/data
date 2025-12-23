@@ -19,15 +19,8 @@ services:
     restart: unless-stopped
     # Run as root to access Docker socket
     user: root
-    # Required for Tailscale userspace networking
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
     networks:
       - datagram-network
-
-volumes:
-  tailscale-state:
 
 networks:
   datagram-network:

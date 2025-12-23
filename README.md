@@ -39,7 +39,6 @@ That's it! You can now start managing your Datagram nodes through the web interf
 - 🔄 **Auto-Refresh**: Dashboard automatically refreshes every 10 seconds
 - ⚡ **High Performance**: Optimized caching for managing 100+ containers efficiently
 - 🐳 **Docker Integration**: Works seamlessly with the existing `unhealthy.sh` cron job
-- 🔗 **Tailscale VPN**: Connect the control panel to a Tailscale network for secure remote access
 
 ## Detailed Installation Guide
 
@@ -555,29 +554,6 @@ Then in the web interface:
 2. Name: "Production Server"
 3. URL: `tcp://192.168.1.100:2375`
 4. Click "Add Host"
-
-### Tailscale VPN Setup
-
-The control panel includes built-in Tailscale VPN support for secure remote access. To connect to a Tailscale network:
-
-1. **Get an Auth Key**:
-   - Go to the [Tailscale Admin Console](https://login.tailscale.com/admin/settings/keys)
-   - Generate a new auth key (reusable recommended for testing)
-   - Copy the key (starts with `tskey-auth-`)
-
-2. **Connect via Admin Panel**:
-   - Navigate to the Admin Panel (`/admin`)
-   - Find the "Tailscale VPN" section
-   - Enter your auth key
-   - Optionally set a custom hostname (e.g., `datagram-panel`)
-   - Click "Connect"
-
-3. **Access Control Panel via Tailscale**:
-   - Once connected, the panel will be accessible via its Tailscale IP
-   - The Tailscale IP and DNS name are shown in the status section
-   - You can access the panel from any device on your Tailscale network
-
-**Note**: The container requires `NET_ADMIN` and `NET_RAW` capabilities for Tailscale to function. These are already configured in the provided `docker-compose.yml`.
 
 ### Production Deployment
 
