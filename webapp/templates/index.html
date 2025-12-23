@@ -1813,14 +1813,20 @@
                     loading.style.display = 'none';
                     content.style.display = 'block';
                 } else {
-                    loading.innerHTML = '';
+                    // Clear loading div safely
+                    while (loading.firstChild) {
+                        loading.removeChild(loading.firstChild);
+                    }
                     const errorDiv = document.createElement('div');
                     errorDiv.style.color = 'var(--danger-color)';
                     errorDiv.textContent = 'Error scanning logs: ' + data.error;
                     loading.appendChild(errorDiv);
                 }
             } catch (error) {
-                loading.innerHTML = '';
+                // Clear loading div safely
+                while (loading.firstChild) {
+                    loading.removeChild(loading.firstChild);
+                }
                 const errorDiv = document.createElement('div');
                 errorDiv.style.color = 'var(--danger-color)';
                 errorDiv.textContent = 'Error scanning logs: ' + error.message;
@@ -1838,12 +1844,6 @@
             if (currentScanHostId && currentScanContainerId) {
                 showLogs(currentScanHostId, currentScanContainerId);
             }
-        }
-        
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
         }
         
         window.onclick = function(event) {

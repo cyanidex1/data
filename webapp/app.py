@@ -1574,7 +1574,7 @@ def scan_auth_errors(host_id, container_id):
         # Matches: auth fail/failure/error/denied, authentication fail/failure/error/denied,
         # invalid user/username/password, login failed/failure, access denied
         auth_error_pattern = re.compile(
-            r'\b(auth(?:entication)?)\s+(?:fail(?:ed|ure)?|error|denied)\b|'
+            r'\b(?:auth(?:entication)?)\s+(?:fail(?:ed|ure)?|error|denied)\b|'
             r'\binvalid\s+(?:user(?:name)?|password)\b|'
             r'\blogin\s+(?:fail(?:ed|ure)?)\b|'
             r'\baccess\s+denied\b',
