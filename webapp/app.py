@@ -1570,10 +1570,14 @@ def scan_auth_errors(host_id, container_id):
         # Get more logs for scanning (last 500 lines)
         logs = container.logs(tail=500).decode('utf-8', errors='ignore')
         
-        # Authentication error pattern
-        # Matches: auth fail, authentication error, authentication denied, invalid user, invalid password, login failed, access denied
+        # Authentication error pattern with word boundaries for precision
+        # Matches: auth fail/failure/error/denied, authentication fail/failure/error/denied,
+        # invalid user/username/password, login failed/failure, access denied
         auth_error_pattern = re.compile(
-            r'auth(entication)?\s+(fail|error|denied)|invalid\s+(user|password)|login\s+failed|access\s+denied',
+            r'\b(auth(?:entication)?)\s+(?:fail(?:ed|ure)?|error|denied)\b|'
+            r'\binvalid\s+(?:user(?:name)?|password)\b|'
+            r'\blogin\s+(?:fail(?:ed|ure)?)\b|'
+            r'\baccess\s+denied\b',
             re.IGNORECASE
         )
         

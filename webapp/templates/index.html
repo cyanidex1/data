@@ -1779,26 +1779,52 @@
                         errorsDiv.style.display = 'block';
                         viewLogsBtn.style.display = 'inline-block';
                         
-                        // Format error lines
-                        let html = '<div style="font-family: monospace; font-size: 12px; line-height: 1.6;">';
+                        // Build error lines using safe DOM manipulation
+                        errorsDiv.innerHTML = ''; // Clear previous content
+                        const container = document.createElement('div');
+                        container.style.fontFamily = 'monospace';
+                        container.style.fontSize = '12px';
+                        container.style.lineHeight = '1.6';
+                        
                         data.sample_errors.forEach((line, index) => {
-                            const escapedLine = escapeHtml(line);
-                            html += `<div style="padding: 6px; margin-bottom: 4px; background: var(--card-bg-color); border-left: 3px solid var(--danger-color); color: var(--danger-color);">${escapedLine}</div>`;
+                            const errorDiv = document.createElement('div');
+                            errorDiv.style.padding = '6px';
+                            errorDiv.style.marginBottom = '4px';
+                            errorDiv.style.background = 'var(--card-bg-color)';
+                            errorDiv.style.borderLeft = '3px solid var(--danger-color)';
+                            errorDiv.style.color = 'var(--danger-color)';
+                            errorDiv.textContent = line; // Safe text content
+                            container.appendChild(errorDiv);
                         });
+                        
                         if (data.has_more) {
-                            html += `<div style="padding: 12px; text-align: center; color: var(--text-muted-color); font-style: italic;">Showing first 10 of ${data.total_errors} errors. Click "View Full Logs" to see all.</div>`;
+                            const moreDiv = document.createElement('div');
+                            moreDiv.style.padding = '12px';
+                            moreDiv.style.textAlign = 'center';
+                            moreDiv.style.color = 'var(--text-muted-color)';
+                            moreDiv.style.fontStyle = 'italic';
+                            moreDiv.textContent = `Showing first 10 of ${data.total_errors} errors. Click "View Full Logs" to see all.`;
+                            container.appendChild(moreDiv);
                         }
-                        html += '</div>';
-                        errorsDiv.innerHTML = html;
+                        
+                        errorsDiv.appendChild(container);
                     }
                     
                     loading.style.display = 'none';
                     content.style.display = 'block';
                 } else {
-                    loading.innerHTML = '<div style="color: var(--danger-color);">Error scanning logs: ' + data.error + '</div>';
+                    loading.innerHTML = '';
+                    const errorDiv = document.createElement('div');
+                    errorDiv.style.color = 'var(--danger-color)';
+                    errorDiv.textContent = 'Error scanning logs: ' + data.error;
+                    loading.appendChild(errorDiv);
                 }
             } catch (error) {
-                loading.innerHTML = '<div style="color: var(--danger-color);">Error scanning logs: ' + error.message + '</div>';
+                loading.innerHTML = '';
+                const errorDiv = document.createElement('div');
+                errorDiv.style.color = 'var(--danger-color)';
+                errorDiv.textContent = 'Error scanning logs: ' + error.message;
+                loading.appendChild(errorDiv);
             }
         }
         
