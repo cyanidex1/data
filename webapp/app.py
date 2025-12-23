@@ -438,18 +438,18 @@ class ContainerListCache:
     """Simple time-based cache for container list to improve performance
     
     This cache reduces load on the Docker API by caching container list responses
-    for a short period (default 5 seconds). It's designed to handle the 10-second
-    auto-refresh interval, ensuring approximately 50% of requests are served from cache.
+    for a short period (default 10 seconds). It's designed to handle the 10-second
+    auto-refresh interval, ensuring most concurrent requests are served from cache.
     
     Thread Safety:
         All methods are thread-safe using a threading.Lock to prevent race conditions
         when multiple requests access the cache concurrently.
     
     Args:
-        ttl_seconds (int): Time-to-live for cached data in seconds. Default is 5 seconds.
+        ttl_seconds (int): Time-to-live for cached data in seconds. Default is 10 seconds.
     
     Usage:
-        cache = ContainerListCache(ttl_seconds=5)
+        cache = ContainerListCache(ttl_seconds=10)
         
         # Try to get from cache
         result = cache.get()
@@ -462,7 +462,7 @@ class ContainerListCache:
         cache.invalidate()
     """
     
-    def __init__(self, ttl_seconds=5):
+    def __init__(self, ttl_seconds=10):
         self.ttl_seconds = ttl_seconds
         self._cache = None
         self._cache_time = None
@@ -493,8 +493,10 @@ class ContainerListCache:
             self._cache_time = None
 
 
-# Initialize container cache with 5-second TTL
-container_cache = ContainerListCache(ttl_seconds=5)
+# Initialize container cache with 10-second TTL
+# Increased from 5 to 10 seconds to better handle high container counts
+# since the auto-refresh interval is 10 seconds anyway
+container_cache = ContainerListCache(ttl_seconds=10)
 
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -818,6 +820,12 @@ def update_host(host_id):
 def _process_host_containers(host, current_time_utc):
     """Process containers for a single host (used for concurrent execution)
     
+    Optimized for high container counts by:
+    - Fetching all container data in one API call (containers.list includes attrs)
+    - Processing environment variables efficiently with early termination
+    - Minimizing object attribute access
+    - Using efficient string operations
+    
     Args:
         host: Host configuration dictionary
         current_time_utc: Current UTC datetime (pre-calculated to avoid repeated calls)
@@ -832,7 +840,8 @@ def _process_host_containers(host, current_time_utc):
     host_containers = []
     
     try:
-        # List all containers - attrs are already loaded in the list response
+        # List all containers - this fetches all data including attrs in a single API call
+        # The Docker SDK's containers.list() is efficient for bulk operations
         containers = client.containers.list(all=True)
         
         for container in containers:
@@ -840,8 +849,10 @@ def _process_host_containers(host, current_time_utc):
             if container.name == 'datagram-control-panel':
                 continue
             
-            # Get environment variables directly from attrs (already loaded)
-            env_vars = container.attrs.get('Config', {}).get('Env', [])
+            # Access attrs once - it's already loaded from the list() call
+            attrs = container.attrs
+            config = attrs.get('Config', {})
+            env_vars = config.get('Env', [])
             
             # Parse environment variables efficiently with early termination
             license_key = None
@@ -881,21 +892,21 @@ def _process_host_containers(host, current_time_utc):
             if expiration_date and is_expired(expiration_date):
                 status = 'expired'
             
-            # Get image name efficiently
-            try:
-                image_name = container.image.tags[0] if container.image.tags else container.image.id[:12]
-            except AttributeError:
-                # Only AttributeError is possible if container.image is None
-                image_name = 'unknown'
+            # Get image name efficiently from Config (already accessed)
+            # This avoids triggering any lazy-loading from container.image property
+            image_name = config.get('Image', 'unknown')
+            
+            # Extract container ID once
+            container_id = container.id[:12]
             
             host_containers.append({
                 'host_id': host['id'],
                 'host_name': host['name'],
-                'id': container.id[:12],
+                'id': container_id,
                 'name': container.name,
                 'status': status,
                 'image': image_name,
-                'created': container.attrs.get('Created', ''),
+                'created': attrs.get('Created', ''),
                 'key': license_key,
                 'email': node_email,
                 'node_type': node_type,
@@ -913,7 +924,7 @@ def list_containers():
     """List all containers across all hosts - requires view permission
     
     Performance optimizations:
-    - Uses a 5-second cache to handle concurrent requests efficiently
+    - Uses a 10-second cache to handle concurrent requests efficiently
     - Processes multiple hosts concurrently using ThreadPoolExecutor
     - Efficiently parses environment variables with early termination
     - Pre-calculates current time to avoid repeated datetime calls
