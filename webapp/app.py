@@ -23,11 +23,31 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
+# Import agent manager (will be initialized after app setup)
+try:
+    from agent_manager import (
+        init_socketio, is_agent_connected, send_command_to_agent,
+        get_connected_agents, store_health_data, get_health_data,
+        get_all_health_data
+    )
+    AGENT_MODE_ENABLED = True
+except ImportError:
+    AGENT_MODE_ENABLED = False
+    print("[WARNING] Agent manager not available. Running in Docker socket-only mode.")
+
 # Initialize Flask-Login
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 login_manager.login_message = 'Please log in to access the control panel.'
+
+# Initialize SocketIO for agent communication
+socketio = None
+if AGENT_MODE_ENABLED:
+    socketio = init_socketio(app)
+    print("[*] Agent mode enabled - SocketIO initialized")
+else:
+    print("[*] Agent mode disabled - using Docker socket only")
 
 # Store Docker hosts configuration
 DATA_DIR = os.environ.get('DATA_DIR', '/data')
@@ -358,7 +378,20 @@ class DockerHostManager:
         if os.path.exists(self.hosts_file):
             try:
                 with open(self.hosts_file, 'r') as f:
-                    return json.load(f)
+                    hosts = json.load(f)
+                    # Migrate old hosts to include new agent fields
+                    for host in hosts:
+                        if 'connection_type' not in host:
+                            host['connection_type'] = 'docker_socket'
+                        if 'agent_api_key' not in host:
+                            host['agent_api_key'] = None
+                        if 'agent_status' not in host:
+                            host['agent_status'] = {
+                                'connected': False,
+                                'last_health_check': None,
+                                'last_seen': None
+                            }
+                    return hosts
             except Exception as e:
                 print(f"Error loading hosts: {e}")
                 return []
@@ -370,13 +403,20 @@ class DockerHostManager:
         with open(self.hosts_file, 'w') as f:
             json.dump(self.hosts, f, indent=2)
     
-    def add_host(self, name, url, description=''):
+    def add_host(self, name, url, description='', connection_type='docker_socket', agent_api_key=None):
         """Add a new Docker host"""
         host = {
             'id': self.next_id,
             'name': name,
             'url': url,
             'description': description,
+            'connection_type': connection_type,  # 'docker_socket' or 'agent'
+            'agent_api_key': agent_api_key,
+            'agent_status': {
+                'connected': False,
+                'last_health_check': None,
+                'last_seen': None
+            },
             'added_at': datetime.now().isoformat()
         }
         self.hosts.append(host)
@@ -389,7 +429,7 @@ class DockerHostManager:
         self.hosts = [h for h in self.hosts if h['id'] != host_id]
         self.save_hosts()
     
-    def update_host(self, host_id, name=None, url=None, description=None):
+    def update_host(self, host_id, name=None, url=None, description=None, connection_type=None, agent_api_key=None):
         """Update a Docker host"""
         host = self.get_host(host_id)
         if not host:
@@ -401,6 +441,10 @@ class DockerHostManager:
             host['url'] = url
         if description is not None:
             host['description'] = description
+        if connection_type is not None:
+            host['connection_type'] = connection_type
+        if agent_api_key is not None:
+            host['agent_api_key'] = agent_api_key
         
         self.save_hosts()
         return host
@@ -815,6 +859,139 @@ def update_host(host_id):
     return jsonify({'success': True, 'host': result})
 
 
+# Agent Management Routes
+
+@app.route('/api/agent/health', methods=['POST'])
+def agent_health_report():
+    """Receive health data from agents"""
+    if not AGENT_MODE_ENABLED:
+        return jsonify({'error': 'Agent mode not enabled'}), 503
+    
+    try:
+        # Validate API key
+        api_key = request.headers.get('X-Agent-API-Key')
+        if not api_key:
+            return jsonify({'error': 'Missing API key'}), 401
+        
+        # Import validation function
+        from agent_manager import validate_agent_api_key
+        if not validate_agent_api_key(api_key):
+            return jsonify({'error': 'Invalid API key'}), 403
+        
+        # Get health data
+        data = request.json
+        host_id = data.get('host_id')
+        
+        if not host_id:
+            return jsonify({'error': 'host_id is required'}), 400
+        
+        # Store health data
+        store_health_data(host_id, data)
+        
+        # Update host agent status
+        host = host_manager.get_host(host_id)
+        if host:
+            host['agent_status']['connected'] = is_agent_connected(host_id)
+            host['agent_status']['last_health_check'] = datetime.utcnow().isoformat()
+            host['agent_status']['last_seen'] = datetime.utcnow().isoformat()
+            host_manager.save_hosts()
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f"Error processing health report: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/agents/status', methods=['GET'])
+@login_required
+def get_agents_status():
+    """Get status of all connected agents - requires view permission"""
+    if not current_user.can_view():
+        return jsonify({'error': 'View privileges required'}), 403
+    
+    if not AGENT_MODE_ENABLED:
+        return jsonify({'agents': [], 'agent_mode_enabled': False})
+    
+    try:
+        connected = get_connected_agents()
+        health_data = get_all_health_data()
+        
+        agents_status = []
+        for host_id in connected:
+            health = health_data.get(host_id, {})
+            agents_status.append({
+                'host_id': host_id,
+                'connected': True,
+                'last_seen': health.get('timestamp'),
+                'metrics': health.get('data', {}).get('stats', {})
+            })
+        
+        return jsonify({
+            'agents': agents_status,
+            'agent_mode_enabled': True
+        })
+    except Exception as e:
+        print(f"Error getting agent status: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/agent-keys', methods=['POST'])
+@login_required
+def generate_agent_key():
+    """Generate a new agent API key - admin only"""
+    if not current_user.is_admin():
+        return jsonify({'error': 'Admin privileges required'}), 403
+    
+    try:
+        import secrets
+        # Generate a secure random API key (32 bytes = 64 hex characters)
+        api_key = secrets.token_hex(32)
+        
+        return jsonify({
+            'success': True,
+            'api_key': api_key,
+            'note': 'Save this key securely. Add it to AGENT_API_KEYS environment variable.'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# Helper function for routing container operations
+def _route_container_operation(host_id, operation, container_id=None, **params):
+    """
+    Route container operation to either agent or Docker socket.
+    
+    Args:
+        host_id: Host ID (as string or int)
+        operation: Operation name (e.g., 'stop_container', 'start_container')
+        container_id: Container ID (optional for list operations)
+        **params: Additional parameters
+        
+    Returns:
+        tuple: (success, result/error, use_agent)
+    """
+    host_id_int = int(host_id)
+    host = host_manager.get_host(host_id_int)
+    
+    if not host:
+        return False, 'Host not found', False
+    
+    # Check if host uses agent mode
+    if AGENT_MODE_ENABLED and host.get('connection_type') == 'agent':
+        if not is_agent_connected(str(host_id_int)):
+            return False, f'Agent for host {host["name"]} is not connected', True
+        
+        # Prepare parameters
+        agent_params = dict(params)
+        if container_id:
+            agent_params['container_id'] = container_id
+        
+        # Send command to agent
+        response = send_command_to_agent(socketio, str(host_id_int), operation, agent_params)
+        return response.get('success', False), response.get('result') or response.get('error'), True
+    
+    return False, None, False  # Not using agent, caller should use Docker socket
+
 
 
 def _process_host_containers(host, current_time_utc):
@@ -994,6 +1171,34 @@ def start_container():
     if host_id is None:
         return jsonify({'error': 'Host ID is required'}), 400
     
+    # Check if host uses agent mode
+    host = host_manager.get_host(host_id)
+    if not host:
+        return jsonify({'error': 'Host not found'}), 404
+    
+    # Route to agent if configured and connected
+    if AGENT_MODE_ENABLED and host.get('connection_type') == 'agent':
+        if not is_agent_connected(str(host_id)):
+            return jsonify({'error': f'Agent for host {host["name"]} is not connected'}), 503
+        
+        # Prepare parameters for agent
+        agent_params = {
+            'node_type': node_type,
+            'expiration_date': expiration_date,
+            'container_name': container_name,
+            **data  # Include all other parameters (key, email, password, etc.)
+        }
+        
+        # Send command to agent
+        response = send_command_to_agent(socketio, str(host_id), 'start_container', agent_params)
+        
+        # Invalidate cache if successful
+        if response.get('success'):
+            container_cache.invalidate()
+        
+        return jsonify(response)
+    
+    # Fallback to direct Docker socket connection
     # Validate node_count
     if not isinstance(node_count, int) or node_count < 1 or node_count > 50:
         return jsonify({'error': 'node_count must be between 1 and 50'}), 400
@@ -1140,7 +1345,18 @@ def start_existing_container(host_id, container_id):
     """Start an existing container - requires edit permission"""
     if not current_user.can_edit():
         return jsonify({'error': 'Edit privileges required'}), 403
+    
     try:
+        # Try agent routing first
+        success, result, used_agent = _route_container_operation(host_id, 'start_container', container_id)
+        if used_agent:
+            if success:
+                container_cache.invalidate()
+                return jsonify({'success': True})
+            else:
+                return jsonify({'error': result}), 500
+        
+        # Fallback to Docker socket
         client = host_manager.get_client(int(host_id))
         if not client:
             return jsonify({'error': 'Could not connect to Docker host'}), 500
@@ -1162,7 +1378,18 @@ def stop_container(host_id, container_id):
     """Stop a running container - requires edit permission"""
     if not current_user.can_edit():
         return jsonify({'error': 'Edit privileges required'}), 403
+    
     try:
+        # Try agent routing first
+        success, result, used_agent = _route_container_operation(host_id, 'stop_container', container_id)
+        if used_agent:
+            if success:
+                container_cache.invalidate()
+                return jsonify({'success': True})
+            else:
+                return jsonify({'error': result}), 500
+        
+        # Fallback to Docker socket
         client = host_manager.get_client(int(host_id))
         if not client:
             return jsonify({'error': 'Could not connect to Docker host'}), 500
@@ -1189,7 +1416,18 @@ def restart_container(host_id, container_id):
     """Restart a container - requires edit permission"""
     if not current_user.can_edit():
         return jsonify({'error': 'Edit privileges required'}), 403
+    
     try:
+        # Try agent routing first
+        success, result, used_agent = _route_container_operation(host_id, 'restart_container', container_id)
+        if used_agent:
+            if success:
+                container_cache.invalidate()
+                return jsonify({'success': True})
+            else:
+                return jsonify({'error': result}), 500
+        
+        # Fallback to Docker socket
         client = host_manager.get_client(int(host_id))
         if not client:
             return jsonify({'error': 'Could not connect to Docker host'}), 500
@@ -1211,7 +1449,18 @@ def kill_container(host_id, container_id):
     """Kill a running container - requires edit permission"""
     if not current_user.can_edit():
         return jsonify({'error': 'Edit privileges required'}), 403
+    
     try:
+        # Try agent routing first
+        success, result, used_agent = _route_container_operation(host_id, 'kill_container', container_id)
+        if used_agent:
+            if success:
+                container_cache.invalidate()
+                return jsonify({'success': True})
+            else:
+                return jsonify({'error': result}), 500
+        
+        # Fallback to Docker socket
         client = host_manager.get_client(int(host_id))
         if not client:
             return jsonify({'error': 'Could not connect to Docker host'}), 500
@@ -1238,7 +1487,18 @@ def remove_container(host_id, container_id):
     """Remove a container - requires edit permission"""
     if not current_user.can_edit():
         return jsonify({'error': 'Edit privileges required'}), 403
+    
     try:
+        # Try agent routing first
+        success, result, used_agent = _route_container_operation(host_id, 'remove_container', container_id)
+        if used_agent:
+            if success:
+                container_cache.invalidate()
+                return jsonify({'success': True})
+            else:
+                return jsonify({'error': result}), 500
+        
+        # Fallback to Docker socket
         client = host_manager.get_client(int(host_id))
         if not client:
             return jsonify({'error': 'Could not connect to Docker host'}), 500
@@ -1267,6 +1527,16 @@ def get_container_logs(host_id, container_id):
         return jsonify({'error': 'View privileges required'}), 403
     
     try:
+        # Try agent routing first
+        tail = request.args.get('tail', 100, type=int)
+        success, result, used_agent = _route_container_operation(host_id, 'get_logs', container_id, tail=tail)
+        if used_agent:
+            if success:
+                return jsonify({'logs': result.get('logs', '')})
+            else:
+                return jsonify({'error': result}), 500
+        
+        # Fallback to Docker socket
         client = host_manager.get_client(int(host_id))
         if not client:
             return jsonify({'error': 'Could not connect to Docker host'}), 500
@@ -1933,4 +2203,9 @@ if __name__ == '__main__':
     if not host_manager.hosts:
         host_manager.add_host('Local Docker', 'local', 'Local Docker daemon via socket')
     
-    app.run(host='0.0.0.0', port=5000, debug=os.environ.get('DEBUG', 'False').lower() == 'true')
+    # Run with SocketIO if agent mode is enabled
+    debug_mode = os.environ.get('DEBUG', 'False').lower() == 'true'
+    if AGENT_MODE_ENABLED and socketio:
+        socketio.run(app, host='0.0.0.0', port=5000, debug=debug_mode)
+    else:
+        app.run(host='0.0.0.0', port=5000, debug=debug_mode)
