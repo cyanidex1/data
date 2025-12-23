@@ -39,6 +39,7 @@
         .icon-admin::before { content: '⚙'; color: #a371f7; font-size: 18px; }
         .icon-users::before { content: '👥'; }
         .icon-host::before { content: '◫'; color: var(--text-muted-color); }
+        .icon-agent::before { content: '🤖'; }
         .icon-add::before { content: '+'; color: var(--success-color); font-weight: bold; }
         .icon-remove::before { content: '×'; color: var(--danger-color); font-weight: bold; }
         .icon-stats::before { content: '◉'; color: var(--primary-color); }
@@ -209,6 +210,72 @@
             color: var(--text-muted-color);
         }
         
+        /* Agent Status Styles */
+        .agent-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        
+        .agent-status.connected {
+            background: var(--alert-success-bg);
+            border: 1px solid var(--alert-success-border);
+            color: var(--success-color);
+        }
+        
+        .agent-status.disconnected {
+            background: var(--alert-error-bg);
+            border: 1px solid var(--alert-error-border);
+            color: var(--danger-color);
+        }
+        
+        .agent-status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            animation: pulse 2s ease-in-out infinite;
+        }
+        
+        .connected .agent-status-dot {
+            background: var(--success-color);
+        }
+        
+        .disconnected .agent-status-dot {
+            background: var(--danger-color);
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .agent-card {
+            background: var(--input-bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        
+        .agent-info h4 {
+            font-size: 15px;
+            font-weight: 500;
+            margin-bottom: 6px;
+        }
+        
+        .agent-info p {
+            font-size: 13px;
+            color: var(--text-muted-color);
+            margin: 3px 0;
+        }
+        
         /* Responsive Design for Mobile */
         @media (max-width: 768px) {
             .header-content {
@@ -363,6 +430,25 @@
                         {% endfor %}
                     </tbody>
                 </table>
+            </div>
+        </div>
+
+        <!-- Agent Status -->
+        <div class="card">
+            <div class="card-header">
+                <span class="icon-agent"></span> Agent Status
+                <button onclick="generateAgentKey()" class="btn btn-primary btn-sm"><span class="icon-add"></span> Generate API Key</button>
+            </div>
+            <div class="card-body">
+                <div id="agent-status-list">
+                    <div class="empty-state">Loading agent status...</div>
+                </div>
+                <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-color);">
+                    <p style="font-size: 13px; color: var(--text-muted-color); margin-bottom: 8px;">
+                        <strong>What is Agent Mode?</strong> Agents are lightweight services (50MB) that run on container hosts and communicate with the control plane via WebSocket. This enables external hosting of the control plane and multi-host management.
+                    </p>
+                    <a href="/docs/AGENT_SETUP.md" target="_blank" style="color: var(--primary-color); font-size: 13px;">📖 Learn More: Agent Setup Guide</a>
+                </div>
             </div>
         </div>
 
@@ -624,7 +710,104 @@
                     }
                 });
             }
+            
+            // Load agent status on page load
+            loadAgentStatus();
         });
+        
+        // Agent Management Functions
+        function loadAgentStatus() {
+            fetch('/api/agents/status')
+                .then(response => response.json())
+                .then(data => {
+                    const statusList = document.getElementById('agent-status-list');
+                    
+                    if (!data.agent_mode_enabled) {
+                        statusList.innerHTML = '<div class="empty-state">Agent mode is not enabled on this control plane.</div>';
+                        return;
+                    }
+                    
+                    if (!data.agents || data.agents.length === 0) {
+                        statusList.innerHTML = '<div class="empty-state">No agents connected. <a href="/docs/AGENT_SETUP.md" target="_blank" style="color: var(--primary-color);">Deploy an agent →</a></div>';
+                        return;
+                    }
+                    
+                    let html = '';
+                    data.agents.forEach(agent => {
+                        const isConnected = agent.connected;
+                        const statusClass = isConnected ? 'connected' : 'disconnected';
+                        const statusText = isConnected ? 'Connected' : 'Disconnected';
+                        const lastSeen = agent.last_seen ? new Date(agent.last_seen).toLocaleString() : 'Never';
+                        
+                        const containerCount = agent.metrics?.containers?.total || 0;
+                        const runningCount = agent.metrics?.containers?.running || 0;
+                        const dockerVersion = agent.metrics?.docker_version || 'Unknown';
+                        
+                        html += `
+                            <div class="agent-card">
+                                <div class="agent-info">
+                                    <h4>🤖 ${agent.host_id}</h4>
+                                    <p><strong>Status:</strong> <span class="agent-status ${statusClass}">
+                                        <span class="agent-status-dot"></span>
+                                        ${statusText}
+                                    </span></p>
+                                    ${isConnected ? `
+                                        <p><strong>Containers:</strong> ${runningCount} running / ${containerCount} total</p>
+                                        <p><strong>Docker:</strong> ${dockerVersion}</p>
+                                    ` : ''}
+                                    <p style="font-size: 11px; margin-top: 4px;"><strong>Last Seen:</strong> ${lastSeen}</p>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    
+                    statusList.innerHTML = html;
+                })
+                .catch(error => {
+                    console.error('Error loading agent status:', error);
+                    document.getElementById('agent-status-list').innerHTML = 
+                        '<div class="empty-state" style="color: var(--danger-color);">Error loading agent status. Please refresh the page.</div>';
+                });
+        }
+        
+        function generateAgentKey() {
+            if (!confirm('Generate a new agent API key? You will need to add this to the AGENT_API_KEYS environment variable and configure your agents to use it.')) {
+                return;
+            }
+            
+            fetch('/api/admin/agent-keys', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Show modal with the API key
+                    const key = data.api_key;
+                    const note = data.note;
+                    
+                    alert(`API Key Generated Successfully!\n\nAPI Key: ${key}\n\n${note}\n\nThis key has been copied to your clipboard.`);
+                    
+                    // Copy to clipboard
+                    navigator.clipboard.writeText(key).then(() => {
+                        showAlert('API key copied to clipboard!', 'success');
+                    }).catch(() => {
+                        showAlert('API key generated. Please copy it manually.', 'success');
+                    });
+                } else {
+                    showAlert('Error: ' + (data.error || 'Failed to generate API key'), 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showAlert('Failed to generate API key: ' + error.message, 'error');
+            });
+        }
+        
+        // Refresh agent status every 10 seconds
+        setInterval(loadAgentStatus, 10000);
         
         function showAlert(message, type) {
             const alertsDiv = document.getElementById('alerts');
