@@ -62,6 +62,7 @@
         .icon-logs::before { content: '≡'; color: var(--text-muted-color); }
         .icon-stats::before { content: '◉'; color: var(--primary-color); }
         .icon-edit::before { content: '✎'; color: var(--warning-color); }
+        .icon-scan::before { content: '🔍'; color: var(--warning-color); font-size: 12px; }
         
         
         .header {
@@ -726,6 +727,36 @@
         </div>
     </div>
 
+    <!-- Auth Error Scan Modal -->
+    <div id="auth-scan-modal" class="modal">
+        <div class="modal-content" style="max-width: 700px;">
+            <div class="modal-header"><span class="icon-scan"></span> Authentication Error Scan Results</div>
+            <div class="modal-body">
+                <div id="auth-scan-loading" style="text-align: center; padding: 24px; color: var(--text-muted-color);">Scanning logs...</div>
+                <div id="auth-scan-content" style="display: none;">
+                    <div style="margin-bottom: 16px;">
+                        <h3 style="font-size: 16px; margin-bottom: 8px;">
+                            <span id="auth-scan-container-name" style="color: var(--primary-color);"></span>
+                        </h3>
+                        <p style="font-size: 14px; color: var(--text-muted-color);">
+                            Found <strong id="auth-scan-count" style="color: var(--danger-color);">0</strong> authentication error(s) in the last 500 log lines.
+                        </p>
+                    </div>
+                    <div id="auth-scan-errors" style="background: var(--bg-color); padding: 12px; border-radius: 6px; max-height: 400px; overflow-y: auto;">
+                        <!-- Error lines will be inserted here -->
+                    </div>
+                    <div id="auth-scan-no-errors" style="display: none; text-align: center; padding: 24px; color: var(--success-color);">
+                        ✓ No authentication errors found in logs
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button onclick="viewFullLogs()" id="view-full-logs-btn" class="btn btn-secondary" style="display: none;">View Full Logs</button>
+                <button onclick="closeAuthScanModal()" class="btn btn-secondary">Close</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let refreshInterval;
         let allContainers = []; // Store all containers for filtering
@@ -1049,6 +1080,7 @@
                                             ${canEdit && c.status !== 'expired' ? `<button onclick="restartContainer('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm"><span class="icon-restart"></span> Restart</button>` : ''}
                                             ${canEdit ? `<button onclick="showEditExpiration('${c.host_id}', '${c.id}', '${c.name}', '${c.expiration_date || ''}')" class="btn btn-secondary btn-sm"><span class="icon-edit"></span> Edit</button>` : ''}
                                             ${canEdit ? `<button onclick="removeContainer('${c.host_id}', '${c.id}')" class="btn btn-danger btn-sm"><span class="icon-remove"></span> Remove</button>` : ''}
+                                            <button onclick="scanAuthErrors('${c.host_id}', '${c.id}', '${c.name}')" class="btn btn-secondary btn-sm"><span class="icon-scan"></span> Scan Auth</button>
                                             <button onclick="showLogs('${c.host_id}', '${c.id}')" class="btn btn-secondary btn-sm"><span class="icon-logs"></span> Logs</button>
                                         </div>
                                     </td>
@@ -1705,15 +1737,100 @@
             }
         }
         
+        // Store current scan context for view full logs button
+        let currentScanHostId = null;
+        let currentScanContainerId = null;
+        
+        async function scanAuthErrors(hostId, containerId, containerName) {
+            const modal = document.getElementById('auth-scan-modal');
+            const loading = document.getElementById('auth-scan-loading');
+            const content = document.getElementById('auth-scan-content');
+            const errorsDiv = document.getElementById('auth-scan-errors');
+            const noErrorsDiv = document.getElementById('auth-scan-no-errors');
+            const countSpan = document.getElementById('auth-scan-count');
+            const nameSpan = document.getElementById('auth-scan-container-name');
+            const viewLogsBtn = document.getElementById('view-full-logs-btn');
+            
+            // Store context for view full logs button
+            currentScanHostId = hostId;
+            currentScanContainerId = containerId;
+            
+            // Show modal with loading state
+            loading.style.display = 'block';
+            content.style.display = 'none';
+            modal.classList.add('active');
+            
+            try {
+                const response = await fetch(`/api/containers/${hostId}/${containerId}/scan-auth-errors`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    nameSpan.textContent = containerName;
+                    countSpan.textContent = data.total_errors;
+                    
+                    if (data.total_errors === 0) {
+                        // No errors found
+                        noErrorsDiv.style.display = 'block';
+                        errorsDiv.style.display = 'none';
+                        viewLogsBtn.style.display = 'none';
+                    } else {
+                        // Errors found - display them
+                        noErrorsDiv.style.display = 'none';
+                        errorsDiv.style.display = 'block';
+                        viewLogsBtn.style.display = 'inline-block';
+                        
+                        // Format error lines
+                        let html = '<div style="font-family: monospace; font-size: 12px; line-height: 1.6;">';
+                        data.sample_errors.forEach((line, index) => {
+                            const escapedLine = escapeHtml(line);
+                            html += `<div style="padding: 6px; margin-bottom: 4px; background: var(--card-bg-color); border-left: 3px solid var(--danger-color); color: var(--danger-color);">${escapedLine}</div>`;
+                        });
+                        if (data.has_more) {
+                            html += `<div style="padding: 12px; text-align: center; color: var(--text-muted-color); font-style: italic;">Showing first 10 of ${data.total_errors} errors. Click "View Full Logs" to see all.</div>`;
+                        }
+                        html += '</div>';
+                        errorsDiv.innerHTML = html;
+                    }
+                    
+                    loading.style.display = 'none';
+                    content.style.display = 'block';
+                } else {
+                    loading.innerHTML = '<div style="color: var(--danger-color);">Error scanning logs: ' + data.error + '</div>';
+                }
+            } catch (error) {
+                loading.innerHTML = '<div style="color: var(--danger-color);">Error scanning logs: ' + error.message + '</div>';
+            }
+        }
+        
+        function closeAuthScanModal() {
+            document.getElementById('auth-scan-modal').classList.remove('active');
+        }
+        
+        function viewFullLogs() {
+            // Close scan modal and open logs modal
+            closeAuthScanModal();
+            if (currentScanHostId && currentScanContainerId) {
+                showLogs(currentScanHostId, currentScanContainerId);
+            }
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
         window.onclick = function(event) {
             const logsModal = document.getElementById('logs-modal');
             const statsModal = document.getElementById('stats-modal');
             const editExpirationModal = document.getElementById('edit-expiration-modal');
             const bulkEditExpirationModal = document.getElementById('bulk-edit-expiration-modal');
+            const authScanModal = document.getElementById('auth-scan-modal');
             if (event.target === logsModal) closeLogsModal();
             if (event.target === statsModal) closeStatsModal();
             if (event.target === editExpirationModal) closeEditExpirationModal();
             if (event.target === bulkEditExpirationModal) closeBulkEditExpirationModal();
+            if (event.target === authScanModal) closeAuthScanModal();
         }
     </script>
 </body>

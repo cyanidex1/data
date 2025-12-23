@@ -1554,6 +1554,45 @@ def get_container_logs(host_id, container_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/containers/<host_id>/<container_id>/scan-auth-errors', methods=['GET'])
+@login_required
+def scan_auth_errors(host_id, container_id):
+    """Scan container logs for authentication errors - requires view permission"""
+    if not current_user.can_view():
+        return jsonify({'error': 'View privileges required'}), 403
+    
+    try:
+        client = host_manager.get_client(int(host_id))
+        if not client:
+            return jsonify({'error': 'Could not connect to Docker host'}), 500
+        
+        container = client.containers.get(container_id)
+        # Get more logs for scanning (last 500 lines)
+        logs = container.logs(tail=500).decode('utf-8', errors='ignore')
+        
+        # Authentication error pattern
+        # Matches: auth fail, authentication error, authentication denied, invalid user, invalid password, login failed, access denied
+        auth_error_pattern = re.compile(
+            r'auth(entication)?\s+(fail|error|denied)|invalid\s+(user|password)|login\s+failed|access\s+denied',
+            re.IGNORECASE
+        )
+        
+        # Scan logs line by line
+        matching_lines = []
+        for line in logs.split('\n'):
+            if auth_error_pattern.search(line):
+                matching_lines.append(line.strip())
+        
+        # Return results
+        return jsonify({
+            'total_errors': len(matching_lines),
+            'sample_errors': matching_lines[:10],  # Return first 10 matches
+            'has_more': len(matching_lines) > 10
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/containers/<host_id>/<container_id>/update-expiration', methods=['POST'])
 @login_required
 def update_container_expiration(host_id, container_id):
