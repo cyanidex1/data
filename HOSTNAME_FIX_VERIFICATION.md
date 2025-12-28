@@ -78,7 +78,7 @@ docker ps --filter ancestor=datagram
 # You should see all containers in "Up" status
 ```
 
-#### 2. Verify Unique Hostnames
+#### 2. Verify Unique Hostnames and MAC Addresses
 
 ```bash
 # Check hostname for each container
@@ -90,9 +90,21 @@ docker exec test2 hostname
 
 docker exec test3 hostname
 # Expected output: test3
+
+# Check MAC address for each container
+docker exec test1 cat /sys/class/net/eth0/address
+# Expected output: 02:42:ac:11:XX:XX (unique per container)
+
+docker exec test2 cat /sys/class/net/eth0/address
+# Expected output: 02:42:ac:11:YY:YY (different from test1)
+
+docker exec test3 cat /sys/class/net/eth0/address
+# Expected output: 02:42:ac:11:ZZ:ZZ (different from test1 and test2)
 ```
 
-Each container should report its container name as the hostname.
+Each container should report:
+- Its container name as the hostname
+- A unique MAC address derived from its name
 
 #### 3. Verify on datagram.network Dashboard
 
@@ -107,15 +119,21 @@ This is the critical test:
 
 #### Check Docker Configuration
 
-Verify the hostname is properly set in Docker:
+Verify the hostname and MAC address are properly set in Docker:
 
 ```bash
 # Inspect container configuration
 docker inspect test1 --format '{{.Config.Hostname}}'
 # Expected output: test1
 
+docker inspect test1 --format '{{.NetworkSettings.MacAddress}}'
+# Expected output: 02:42:ac:11:XX:XX (unique MAC)
+
 docker inspect test2 --format '{{.Config.Hostname}}'
 # Expected output: test2
+
+docker inspect test2 --format '{{.NetworkSettings.MacAddress}}'
+# Expected output: 02:42:ac:11:YY:YY (different from test1)
 ```
 
 #### Check Container Logs
