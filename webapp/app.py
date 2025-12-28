@@ -1119,7 +1119,7 @@ def start_container():
                 'detach': True,
                 'restart_policy': {'Name': 'on-failure', 'MaximumRetryCount': 3},
                 'privileged': True,
-                'ulimits': [{'Name': 'nofile', 'Soft': 65536, 'Hard': 65536}]
+                'ulimits': [{'Name': 'nofile', 'Soft': 1048576, 'Hard': 1048576}]
             }
             
             # Start the container
@@ -1438,7 +1438,7 @@ def update_container_expiration(host_id, container_id):
             'detach': True,
             'restart_policy': restart_policy,
             'privileged': True,
-            'ulimits': [{'Name': 'nofile', 'Soft': 65536, 'Hard': 65536}]
+            'ulimits': [{'Name': 'nofile', 'Soft': 1048576, 'Hard': 1048576}]
         }
         
         new_container = client.containers.run(**container_kwargs)
@@ -1779,7 +1779,7 @@ def import_keys():
                     'detach': True,
                     'restart_policy': {'Name': 'on-failure', 'MaximumRetryCount': 3},
                     'privileged': True,
-                    'ulimits': [{'Name': 'nofile', 'Soft': 65536, 'Hard': 65536}]
+                    'ulimits': [{'Name': 'nofile', 'Soft': 1048576, 'Hard': 1048576}]
                 }
                 
                 container = client.containers.run(**container_kwargs)
