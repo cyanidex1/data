@@ -268,4 +268,4 @@ docker exec node2 ip link show wg0
 
 - **Documentation**: See [DOCKER_WITH_SUDO.md](DOCKER_WITH_SUDO.md) for complete guide
 - **Quick Start Script**: Use `./docker-quick-start.sh` for easy management
-- **Native Alternative**: See [native-install/NATIVE_INSTALL.md](native-install/NATIVE_INSTALL.md)
+- **Main README**: See [README.md](README.md) for web interface setup

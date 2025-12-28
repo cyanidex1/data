@@ -231,24 +231,14 @@ The containers run with these Linux capabilities (not full `--privileged`):
 
 This provides the **minimum required privileges** for WireGuard to work, while maintaining security and isolation.
 
-## Key Differences: Docker vs Native Installation
-
-| Feature | Docker (This Guide) | Native (native-install/) |
-|---------|---------------------|--------------------------|
-| Isolation | ✅ Full isolation per container | ❌ All instances on host |
-| Interface Names | All can use wg0 (isolated) | Must use wg0, wg1, wg2... |
-| Management | Docker commands or Web UI | Systemd services |
-| Security | Containerized | Direct host access |
-| Resource Usage | Container overhead | Lower overhead |
-| Setup Complexity | Simple (docker run) | Requires systemd setup |
-
 ## Why Docker is Recommended for This Use Case
 
 1. **Better Isolation**: Each container is completely isolated from others
-2. **No Name Conflicts**: All containers can create wg0 without conflicts
+2. **No Name Conflicts**: All containers can create wg0, wg1, wg2 without conflicts
 3. **Easier Management**: Use Docker commands or the web interface
 4. **Safer**: Containers are sandboxed and can't affect the host system
 5. **Portable**: Works the same on any Docker-capable system
+6. **Sudo-like Privileges**: Containers run with necessary capabilities via Docker
 
 ## Troubleshooting
 
@@ -328,8 +318,8 @@ docker ps --filter ancestor=datagram --format '{{.Names}}' | \
 
 ## Additional Resources
 
-- Main README: [../README.md](../README.md)
-- Network Isolation Details: [../NETWORK_ISOLATION_EXPLAINED.md](../NETWORK_ISOLATION_EXPLAINED.md)
-- Container Isolation: [../CONTAINER_ISOLATION.md](../CONTAINER_ISOLATION.md)
-- Testing Guide: [../TESTING_GUIDE.md](../TESTING_GUIDE.md)
-- Native Installation (alternative): [../native-install/NATIVE_INSTALL.md](../native-install/NATIVE_INSTALL.md)
+- Main README: [README.md](README.md)
+- Network Isolation Details: [NETWORK_ISOLATION_EXPLAINED.md](NETWORK_ISOLATION_EXPLAINED.md)
+- Container Isolation: [CONTAINER_ISOLATION.md](CONTAINER_ISOLATION.md)
+- Testing Guide: [TESTING_GUIDE.md](TESTING_GUIDE.md)
+- Verification Report: [VERIFICATION_REPORT.md](VERIFICATION_REPORT.md)

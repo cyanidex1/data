@@ -4,18 +4,18 @@ A web-based control panel for managing Docker containers running Datagram nodes 
 
 ![Control Panel Screenshot](https://github.com/user-attachments/assets/56856c2c-0b96-4104-ad49-869eaf15f998)
 
-## Installation Options
+## 🐳 Docker Installation with Sudo-like Privileges
 
-### 🐳 Docker Installation (Recommended)
 Run Datagram nodes in isolated Docker containers with a web-based control panel. **Each container runs `sudo datagram run` with its own WireGuard interfaces (wg0, wg1, wg2, etc.) in isolated network namespaces.**
 
+### Key Features:
+- ✅ Each container has NET_ADMIN, NET_RAW, and SYS_MODULE capabilities (sudo-like privileges)
+- ✅ Multiple containers can create identically-named WireGuard interfaces without conflicts
+- ✅ Complete network namespace isolation
+- ✅ Web UI for easy management
+- ✅ Command-line tools for quick deployment
+
 📘 **See [DOCKER_WITH_SUDO.md](DOCKER_WITH_SUDO.md)** for details on how Docker containers run datagram with sudo-like privileges and create WireGuard interfaces.
-
-### 🖥️ Native Installation
-Run Datagram directly on your Linux host with systemd services. See [native-install/NATIVE_INSTALL.md](native-install/NATIVE_INSTALL.md) for details.
-
-**Choose Docker if:** You want isolation, easier management, and web UI  
-**Choose Native if:** You prefer direct host access and systemd service management
 
 ## ⚡ Quick Start (One-Liner)
 
