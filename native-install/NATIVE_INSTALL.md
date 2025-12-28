@@ -33,23 +33,26 @@ This will:
 
 ### 2. Add and Start Instances
 
+**⚠️ Important**: Replace the example keys below with your actual Datagram license keys!
+
 **Quick method (auto-increment names):**
 ```bash
 # Add instance with auto-increment name (node0, node1, node2, etc.)
-sudo ./datagram-manager.sh quick-add 92bcf2ae4e326968f40f8670a3596b80
+# Replace with your actual license key
+sudo ./datagram-manager.sh quick-add YOUR_LICENSE_KEY_HERE
 
 # Add more instances with different keys
-sudo ./datagram-manager.sh quick-add a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6
-sudo ./datagram-manager.sh quick-add b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7
+sudo ./datagram-manager.sh quick-add YOUR_SECOND_KEY_HERE
+sudo ./datagram-manager.sh quick-add YOUR_THIRD_KEY_HERE
 
 # Use custom prefix
-sudo ./datagram-manager.sh quick-add c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8 vpn
+sudo ./datagram-manager.sh quick-add YOUR_KEY_HERE vpn
 ```
 
 **Manual method (custom names):**
 ```bash
-# Add an instance
-sudo ./datagram-manager.sh add node0 92bcf2ae4e326968f40f8670a3596b80
+# Add an instance (replace with your actual license key)
+sudo ./datagram-manager.sh add node0 YOUR_LICENSE_KEY_HERE
 
 # Start the instance
 sudo ./datagram-manager.sh start node0

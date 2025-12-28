@@ -4,6 +4,8 @@
 
 The existing Docker setup **already supports** running `sudo datagram run` inside containers, with each container creating its own WireGuard interface (wg0, wg1, wg2, etc.) in isolated network namespaces.
 
+🚀 **Quick Start**: Use `./docker-quick-start.sh` for the easiest way to get started!
+
 ## How It Works
 
 When you run datagram in a Docker container:
@@ -31,7 +33,29 @@ Each container can create wg0, wg1, wg2, etc. without conflicts because they're 
 
 ## Quick Start
 
-### Method 1: Using the Start Script (Recommended)
+### Method 0: Using the Quick-Start Script (Easiest!)
+
+```bash
+# Build the image (one-time setup)
+./docker-quick-start.sh build
+
+# Start containers with your actual license keys
+./docker-quick-start.sh start 92bcf2ae4e326968f40f8670a3596b80 a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6
+
+# Or quickly test with random keys
+./docker-quick-start.sh quick-start 3
+
+# List all running containers
+./docker-quick-start.sh list
+
+# View details including WireGuard interfaces
+./docker-quick-start.sh details node1
+
+# View logs
+./docker-quick-start.sh logs node1
+```
+
+### Method 1: Using the Start Script
 
 ```bash
 cd datagram
