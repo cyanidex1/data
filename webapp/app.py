@@ -1116,7 +1116,8 @@ def start_container():
                 'environment': env_vars,
                 'platform': 'linux/amd64',
                 'detach': True,
-                'restart_policy': {'Name': 'on-failure', 'MaximumRetryCount': 3}
+                'restart_policy': {'Name': 'on-failure', 'MaximumRetryCount': 3},
+                'privileged': True
             }
             
             # Start the container
@@ -1433,7 +1434,8 @@ def update_container_expiration(host_id, container_id):
             'environment': new_env,
             'platform': 'linux/amd64',
             'detach': True,
-            'restart_policy': restart_policy
+            'restart_policy': restart_policy,
+            'privileged': True
         }
         
         new_container = client.containers.run(**container_kwargs)
@@ -1772,7 +1774,8 @@ def import_keys():
                     'environment': env_vars,
                     'platform': 'linux/amd64',
                     'detach': True,
-                    'restart_policy': {'Name': 'on-failure', 'MaximumRetryCount': 3}
+                    'restart_policy': {'Name': 'on-failure', 'MaximumRetryCount': 3},
+                    'privileged': True
                 }
                 
                 container = client.containers.run(**container_kwargs)
