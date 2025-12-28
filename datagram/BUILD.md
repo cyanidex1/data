@@ -35,9 +35,11 @@ docker build --platform linux/amd64 -t datagram .
 When using the web control panel:
 
 1. **First startup**: The startup script automatically downloads binaries and builds the datagram image
-2. **Rebuild Images**: Click "Rebuild Images" in the admin panel - binaries are automatically downloaded if not present
+2. **Rebuild Images**: Click "Rebuild Images" in the admin panel - binaries are **always re-downloaded** to ensure the latest version
 
 The web control panel handles the binary download process automatically, so you don't need to manually run `download-binaries.sh`.
+
+**Note:** When rebuilding images via the web UI, existing binaries are removed and fresh ones are downloaded. This ensures you always have the latest CLI versions.
 
 ## Why This Approach?
 
@@ -97,9 +99,12 @@ docker build --platform linux/amd64 -t datagram .
 ### Rebuild Images in Web UI
 
 When clicking "Rebuild Images" in the admin panel:
-- If binaries don't exist, they are automatically downloaded first (takes ~90 seconds)
-- The image is then rebuilt with `--no-cache`
-- Build process takes ~5 seconds after binaries are downloaded
+- **Existing binaries are always removed** to download the latest version
+- Fresh binaries are downloaded from a privileged container (~90 seconds)
+- The image is then rebuilt with `--no-cache` (~5 seconds)
+- Total rebuild time: ~95 seconds
+
+This ensures you always get the latest VPN and Conference CLI versions when rebuilding.
 
 ## Automated Build
 
