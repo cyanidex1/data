@@ -38,7 +38,7 @@ DEFAULT_IMAGE = 'datagram'
 
 # Container resource limits
 # Default ulimit for file descriptors per container
-# 8192 is sufficient for VPN/WireGuard operations while allowing 100+ containers
+# 8192 is sufficient for VPN/WireGuard operations while allowing 500+ containers
 # Can be increased via CONTAINER_ULIMIT environment variable if needed
 CONTAINER_ULIMIT = int(os.environ.get('CONTAINER_ULIMIT', '8192'))
 

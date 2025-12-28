@@ -219,8 +219,8 @@ The control panel supports the following environment variables:
 - `DEBUG`: Enable debug mode (`True` or `False`)
 - `CONTAINER_ULIMIT`: File descriptor limit per container (default: `8192`)
   - Supports running 500+ containers with default value
-  - Increase to `16384` or higher if individual containers need more file descriptors
-  - Lower values may cause "too many open files" errors in VPN/WireGuard operations
+  - Sufficient for VPN/WireGuard operations (provides 4-8× headroom over typical usage)
+  - Increase to `16384` or higher only if you encounter "too many open files" errors
 
 ### Persistent Data
 

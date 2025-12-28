@@ -12,7 +12,7 @@ CONTAINER_PREFIX="${2:-node}"  # Default to "node" if not provided
 
 # Container ulimit for file descriptors (default: 8192)
 # Can be overridden via CONTAINER_ULIMIT environment variable
-# 8192 is sufficient for VPN/WireGuard while allowing 100+ containers
+# 8192 is sufficient for VPN/WireGuard while allowing 500+ containers
 CONTAINER_ULIMIT="${CONTAINER_ULIMIT:-8192}"
 
 # Build image if not already built
