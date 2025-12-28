@@ -31,18 +31,19 @@ CONTAINER_NAME="${CONTAINER_PREFIX}${INDEX}"
 echo "[*] Launching container '$CONTAINER_NAME' in background..."
 echo "[*] Using ulimit: $CONTAINER_ULIMIT file descriptors"
 
-# Use specific capabilities instead of --privileged to maintain container isolation
+# Use specific capabilities instead of --privileged
 # NET_ADMIN: Create and manage network interfaces (TUN/TAP for VPN)
 # NET_RAW: Use raw and packet sockets
 # SYS_MODULE: Load kernel modules (for WireGuard if needed)
-# Each container gets its own network namespace (bridge mode) for proper isolation
+# Using host network mode to allow WireGuard wg0 interface creation
+# Note: This means containers share the host's network namespace
 docker run \
   --platform linux/amd64 \
   --cap-add=NET_ADMIN \
   --cap-add=NET_RAW \
   --cap-add=SYS_MODULE \
   --device=/dev/net/tun:/dev/net/tun \
-  --network=bridge \
+  --network=host \
   --env LICENSE_KEY="$LICENSE_KEY" \
   --name "$CONTAINER_NAME" \
   --restart unless-stopped \

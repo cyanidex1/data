@@ -1117,11 +1117,12 @@ def start_container():
                 current_container_name = find_unique_container_name(client, base_container_name)
             
             # Prepare container run kwargs
-            # Use specific capabilities instead of privileged mode to maintain container isolation
+            # Use specific capabilities instead of privileged mode
             # NET_ADMIN: Create and manage network interfaces (TUN/TAP for VPN)
             # NET_RAW: Use raw and packet sockets
             # SYS_MODULE: Load kernel modules (for WireGuard if needed)
-            # Each container gets its own network namespace for proper isolation
+            # Using host network mode to allow WireGuard wg0 interface creation
+            # Note: This means containers share the host's network namespace
             container_kwargs = {
                 'image': image_name,
                 'name': current_container_name,
@@ -1131,7 +1132,7 @@ def start_container():
                 'restart_policy': {'Name': 'on-failure', 'MaximumRetryCount': 3},
                 'cap_add': ['NET_ADMIN', 'NET_RAW', 'SYS_MODULE'],
                 'devices': ['/dev/net/tun:/dev/net/tun'],
-                'network_mode': 'bridge',  # Each container gets its own network namespace
+                'network_mode': 'host',  # Required for WireGuard wg0 interface
                 'ulimits': [docker.types.Ulimit(name='nofile', soft=CONTAINER_ULIMIT, hard=CONTAINER_ULIMIT)]
             }
             
@@ -1454,7 +1455,7 @@ def update_container_expiration(host_id, container_id):
             'restart_policy': restart_policy,
             'cap_add': ['NET_ADMIN', 'NET_RAW', 'SYS_MODULE'],
             'devices': ['/dev/net/tun:/dev/net/tun'],
-            'network_mode': 'bridge',  # Each container gets its own network namespace
+            'network_mode': 'host',  # Required for WireGuard wg0 interface
             'ulimits': [docker.types.Ulimit(name='nofile', soft=CONTAINER_ULIMIT, hard=CONTAINER_ULIMIT)]
         }
         
@@ -1799,7 +1800,7 @@ def import_keys():
                     'restart_policy': {'Name': 'on-failure', 'MaximumRetryCount': 3},
                     'cap_add': ['NET_ADMIN', 'NET_RAW', 'SYS_MODULE'],
                     'devices': ['/dev/net/tun:/dev/net/tun'],
-                    'network_mode': 'bridge',  # Each container gets its own network namespace
+                    'network_mode': 'host',  # Required for WireGuard wg0 interface
                     'ulimits': [docker.types.Ulimit(name='nofile', soft=CONTAINER_ULIMIT, hard=CONTAINER_ULIMIT)]
                 }
                 
