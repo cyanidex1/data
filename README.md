@@ -302,12 +302,12 @@ With 100+ containers across multiple hosts:
 
 2. Run this one-liner on your host to increase them:
    ```bash
-   sudo bash -c 'echo "fs.nr_open = 1048576" > /etc/sysctl.d/99-docker-limits.conf && echo "fs.file-max = 9223372036854775807" >> /etc/sysctl.d/99-docker-limits.conf && sysctl -p /etc/sysctl.d/99-docker-limits.conf && echo -e "*    soft    nofile    1048576\n*    hard    nofile    1048576\nroot soft    nofile    1048576\nroot hard    nofile    1048576" >> /etc/security/limits.conf && systemctl restart docker'
+   sudo bash -c 'echo "fs.nr_open = 1048576" > /etc/sysctl.d/99-docker-limits.conf && echo "fs.file-max = 9223372036854775807" >> /etc/sysctl.d/99-docker-limits.conf && sysctl -p /etc/sysctl.d/99-docker-limits.conf && grep -q "nofile.*1048576" /etc/security/limits.conf || echo -e "*    soft    nofile    1048576\n*    hard    nofile    1048576\nroot soft    nofile    1048576\nroot hard    nofile    1048576" >> /etc/security/limits.conf && systemctl restart docker'
    ```
 
 3. For detailed instructions, see [HOST_CONFIGURATION.md](HOST_CONFIGURATION.md).
 
-**Note**: The ulimit of 1,048,576 provides sufficient file descriptors for VPN/WireGuard operations while allowing multiple containers to run simultaneously.
+**Note**: The ulimit of 1,048,576 provides sufficient file descriptors for VPN/WireGuard operations while allowing multiple containers to run simultaneously. The one-liner command is safe to run multiple times.
 
 ### Cannot connect to Docker daemon
 

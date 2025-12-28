@@ -43,14 +43,16 @@ ulimit -n
 Run this command to configure all limits at once:
 
 ```bash
-sudo bash -c 'echo "fs.nr_open = 1048576" > /etc/sysctl.d/99-docker-limits.conf && echo "fs.file-max = 9223372036854775807" >> /etc/sysctl.d/99-docker-limits.conf && sysctl -p /etc/sysctl.d/99-docker-limits.conf && echo -e "*    soft    nofile    1048576\n*    hard    nofile    1048576\nroot soft    nofile    1048576\nroot hard    nofile    1048576" >> /etc/security/limits.conf && systemctl restart docker'
+sudo bash -c 'echo "fs.nr_open = 1048576" > /etc/sysctl.d/99-docker-limits.conf && echo "fs.file-max = 9223372036854775807" >> /etc/sysctl.d/99-docker-limits.conf && sysctl -p /etc/sysctl.d/99-docker-limits.conf && grep -q "nofile.*1048576" /etc/security/limits.conf || echo -e "*    soft    nofile    1048576\n*    hard    nofile    1048576\nroot soft    nofile    1048576\nroot hard    nofile    1048576" >> /etc/security/limits.conf && systemctl restart docker'
 ```
 
 This command will:
 - Set `fs.nr_open` to 1,048,576 (per-process limit)
 - Set `fs.file-max` to 9,223,372,036,854,775,807 (system-wide limit)
-- Update user limits in `/etc/security/limits.conf`
+- Update user limits in `/etc/security/limits.conf` (only if not already configured)
 - Restart Docker daemon to apply changes
+
+**Note**: The command is safe to run multiple times as it checks if limits are already configured before appending to limits.conf.
 
 ### Manual Configuration Steps
 
