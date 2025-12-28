@@ -292,17 +292,22 @@ With 100+ containers across multiple hosts:
 
 **Error**: `failed to bring device up: too many open files`
 
-**Solution**: The control panel automatically sets container ulimits to 1,048,576 file descriptors. This should be sufficient for most workloads. If you still see this error:
+**Solution**: The control panel automatically sets container ulimits to 65,536 file descriptors. This value is optimized to allow 100+ containers to run simultaneously without exhausting system resources. If you still see this error:
 
 1. Check your host system limits:
    ```bash
-   cat /proc/sys/fs/nr_open    # Should be >= 1048576
-   cat /proc/sys/fs/file-max   # Should be >= 1048576
+   cat /proc/sys/fs/nr_open    # Should be >= 65536
+   cat /proc/sys/fs/file-max   # Should be >= 65536
    ```
 
-2. If limits are insufficient, see [HOST_CONFIGURATION.md](HOST_CONFIGURATION.md) for instructions on increasing them.
+2. If limits are insufficient, run this one-liner on your host to increase them:
+   ```bash
+   sudo bash -c 'echo "fs.nr_open = 1048576" >> /etc/sysctl.d/99-docker-limits.conf && echo "fs.file-max = 2097152" >> /etc/sysctl.d/99-docker-limits.conf && sysctl -p /etc/sysctl.d/99-docker-limits.conf && echo -e "*    soft    nofile    1048576\n*    hard    nofile    1048576\nroot soft    nofile    1048576\nroot hard    nofile    1048576" >> /etc/security/limits.conf && systemctl restart docker'
+   ```
 
-**Note**: Most modern Linux systems have adequate default limits and no configuration is needed.
+3. For detailed instructions, see [HOST_CONFIGURATION.md](HOST_CONFIGURATION.md).
+
+**Note**: Most modern Linux systems have adequate default limits and no configuration is needed. The reduced ulimit (from 1,048,576 to 65,536) allows many more containers to run before hitting system-wide limits.
 
 ### Cannot connect to Docker daemon
 
