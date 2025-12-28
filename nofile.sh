@@ -1,18 +1,18 @@
 #!/bin/bash
-# fix-container-limits-max. sh - Apply maximum possible system limits for containers
+# fix-container-limits-max.sh - Apply maximum possible system limits for containers
 
 echo "🔧 Applying MAXIMUM system-wide limits for large-scale container deployments..."
 
 # Backup existing configs
 echo "📦 Creating backups..."
-sudo cp /etc/security/limits. conf /etc/security/limits. conf.backup. $(date +%Y%m%d_%H%M%S) 2>/dev/null || true
+sudo cp /etc/security/limits.conf /etc/security/limits.conf.backup.$(date +%Y%m%d_%H%M%S) 2>/dev/null || true
 sudo cp /etc/sysctl.conf /etc/sysctl.conf.backup.$(date +%Y%m%d_%H%M%S) 2>/dev/null || true
 
 # 1. System-wide file limits (MAXIMUM)
 echo "📁 Setting maximum file descriptor limits..."
-sudo tee -a /etc/security/limits.conf > /dev/null <<EOF
+sudo bash -c 'cat >> /etc/security/limits.conf << "LIMITSEOF"
 
-# Maximum limits for container operations (added $(date))
+# Maximum limits for container operations (added on $(date))
 * soft nofile 1048576
 * hard nofile 1048576
 root soft nofile 1048576
@@ -21,13 +21,13 @@ root hard nofile 1048576
 * hard nproc 1048576
 root soft nproc 1048576
 root hard nproc 1048576
-EOF
+LIMITSEOF'
 
 # 2. Kernel parameters (MAXIMUM VALUES)
 echo "⚙️  Setting maximum kernel parameters..."
-sudo tee -a /etc/sysctl.conf > /dev/null <<EOF
+sudo bash -c 'cat >> /etc/sysctl.conf << "SYSCTLEOF"
 
-# Maximum kernel limits for containers (added $(date))
+# Maximum kernel limits for containers (added on $(date))
 # File system limits
 fs.file-max = 9223372036854775807
 fs.nr_open = 1048576
@@ -43,14 +43,14 @@ kernel.threads-max = 4194304
 net.netfilter.nf_conntrack_max = 2097152
 net.nf_conntrack_max = 2097152
 net.netfilter.nf_conntrack_buckets = 524288
-net.netfilter. nf_conntrack_tcp_timeout_established = 86400
+net.netfilter.nf_conntrack_tcp_timeout_established = 86400
 
 # Network performance
 net.core.somaxconn = 65535
 net.core.netdev_max_backlog = 65536
 net.ipv4.tcp_max_syn_backlog = 65536
 net.ipv4.ip_local_port_range = 1024 65535
-net. ipv4.tcp_tw_reuse = 1
+net.ipv4.tcp_tw_reuse = 1
 net.ipv4.tcp_fin_timeout = 30
 
 # Memory and swap
@@ -62,7 +62,7 @@ vm.swappiness = 10
 net.ipv4.neigh.default.gc_thresh1 = 80000
 net.ipv4.neigh.default.gc_thresh2 = 90000
 net.ipv4.neigh.default.gc_thresh3 = 100000
-EOF
+SYSCTLEOF'
 
 # Apply sysctl changes immediately
 echo "🔄 Applying kernel parameters..."
@@ -71,29 +71,27 @@ sudo sysctl -p
 # 3. Docker daemon limits (MAXIMUM)
 echo "🐳 Setting maximum Docker daemon limits..."
 sudo mkdir -p /etc/systemd/system/docker.service.d
-sudo tee /etc/systemd/system/docker.service. d/override.conf > /dev/null <<EOF
+sudo bash -c 'cat > /etc/systemd/system/docker.service.d/override.conf << "DOCKEREOF"
 [Service]
 LimitNOFILE=1048576
 LimitNPROC=1048576
 LimitCORE=infinity
-LimitNOFILE=infinity
 LimitMEMLOCK=infinity
 TasksMax=infinity
-EOF
+DOCKEREOF'
 
-# 4. Docker daemon. json configuration
+# 4. Docker daemon.json configuration
 echo "⚙️  Configuring Docker daemon.json..."
 sudo mkdir -p /etc/docker
 
 # Backup existing daemon.json
 if [ -f /etc/docker/daemon.json ]; then
     sudo cp /etc/docker/daemon.json /etc/docker/daemon.json.backup.$(date +%Y%m%d_%H%M%S)
-fi
-
-# Merge with existing config or create new one
-if [ -f /etc/docker/daemon.json ]; then
-    echo "⚠️  Existing daemon.json found.  Please manually merge these settings:"
-    cat <<EOF
+    echo "⚠️  Existing daemon.json found and backed up."
+    echo "⚠️  Please manually merge these settings if needed."
+    echo ""
+    echo "Recommended daemon.json content:"
+    cat << "RECOMMENDEDEOF"
 {
   "default-ulimits": {
     "nofile": {
@@ -115,23 +113,26 @@ if [ -f /etc/docker/daemon.json ]; then
     "max-file": "3"
   }
 }
-EOF
-else
-    sudo tee /etc/docker/daemon. json > /dev/null <<EOF
+RECOMMENDEDEOF
+    echo ""
+    read -p "Overwrite existing daemon.json? (y/N): " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        sudo bash -c 'cat > /etc/docker/daemon.json << "DAEMONEOF"
 {
   "default-ulimits": {
     "nofile": {
-      "Name":  "nofile",
+      "Name": "nofile",
       "Hard": 1048576,
       "Soft": 1048576
     },
     "nproc": {
-      "Name":  "nproc",
+      "Name": "nproc",
       "Hard": 1048576,
       "Soft": 1048576
     }
   },
-  "max-concurrent-downloads":  10,
+  "max-concurrent-downloads": 10,
   "max-concurrent-uploads": 10,
   "log-driver": "json-file",
   "log-opts": {
@@ -139,14 +140,43 @@ else
     "max-file": "3"
   }
 }
-EOF
+DAEMONEOF'
+        echo "✅ daemon.json updated"
+    else
+        echo "⏭️  Skipped daemon.json update - please merge manually"
+    fi
+else
+    sudo bash -c 'cat > /etc/docker/daemon.json << "DAEMONEOF"
+{
+  "default-ulimits": {
+    "nofile": {
+      "Name": "nofile",
+      "Hard": 1048576,
+      "Soft": 1048576
+    },
+    "nproc": {
+      "Name": "nproc",
+      "Hard": 1048576,
+      "Soft": 1048576
+    }
+  },
+  "max-concurrent-downloads": 10,
+  "max-concurrent-uploads": 10,
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "3"
+  }
+}
+DAEMONEOF'
+    echo "✅ daemon.json created"
 fi
 
 # 5. Set conntrack modules to load on boot
 echo "🔌 Configuring conntrack modules..."
-sudo tee /etc/modules-load.d/conntrack. conf > /dev/null <<EOF
+sudo bash -c 'cat > /etc/modules-load.d/conntrack.conf << "CONNTRACKEOF"
 nf_conntrack
-EOF
+CONNTRACKEOF'
 
 # Load conntrack module now
 sudo modprobe nf_conntrack 2>/dev/null || true
@@ -157,9 +187,9 @@ if [ -f /sys/module/nf_conntrack/parameters/hashsize ]; then
     echo 524288 | sudo tee /sys/module/nf_conntrack/parameters/hashsize > /dev/null
     
     # Make it permanent
-    sudo tee /etc/modprobe.d/nf_conntrack.conf > /dev/null <<EOF
+    sudo bash -c 'cat > /etc/modprobe.d/nf_conntrack.conf << "MODPROBEEOF"
 options nf_conntrack hashsize=524288
-EOF
+MODPROBEEOF'
 fi
 
 # 7. Reload and restart Docker
@@ -175,7 +205,7 @@ sleep 5
 if sudo systemctl is-active --quiet docker; then
     echo "✅ Docker is running"
 else
-    echo "❌ Docker failed to start!  Check logs with: sudo journalctl -u docker -n 50"
+    echo "❌ Docker failed to start! Check logs with: sudo journalctl -u docker -n 50"
     exit 1
 fi
 
@@ -188,7 +218,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "File descriptors (user):    $(ulimit -n)"
 echo "File descriptors (hard):    $(ulimit -Hn)"
 echo "Max open files (system):    $(cat /proc/sys/fs/file-max)"
-echo "Max PIDs:                    $(cat /proc/sys/kernel/pid_max)"
+echo "Max PIDs:                   $(cat /proc/sys/kernel/pid_max)"
 echo "Inotify watches:            $(cat /proc/sys/fs/inotify/max_user_watches)"
 echo "Inotify instances:          $(cat /proc/sys/fs/inotify/max_user_instances)"
 
@@ -211,6 +241,6 @@ echo ""
 echo "🔍 Check Docker logs if issues persist:"
 echo "   sudo journalctl -u docker -n 100 --no-pager"
 echo ""
-echo "📝 Backups created with . backup. <timestamp> extension"
+echo "📝 Backups created with .backup.<timestamp> extension"
 echo ""
 echo "🎯 System is now configured for maximum container capacity!"
