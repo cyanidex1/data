@@ -1939,9 +1939,28 @@ def rebuild_images():
                     }
                     continue
                 
+                # Validate dockerfile name to prevent directory traversal attacks
+                # Dockerfile names should only contain safe characters and no path separators
+                if not re.match(r'^[a-z0-9_-]+\.Dockerfile$', dockerfile):
+                    results[node_type] = {
+                        'success': False,
+                        'error': f'Invalid dockerfile name format: {dockerfile}'
+                    }
+                    continue
+                
                 # Build image from dockerfile directory with --no-cache
                 # The dockerfiles are in /app/dockerfiles/ in the webapp container
                 dockerfile_path = os.path.join('/app/dockerfiles', dockerfile)
+                
+                # Additional security check: ensure path doesn't escape the dockerfiles directory
+                dockerfile_realpath = os.path.realpath(dockerfile_path)
+                dockerfiles_dir = os.path.realpath('/app/dockerfiles')
+                if not dockerfile_realpath.startswith(dockerfiles_dir):
+                    results[node_type] = {
+                        'success': False,
+                        'error': f'Invalid dockerfile path: {dockerfile}'
+                    }
+                    continue
                 
                 if not os.path.exists(dockerfile_path):
                     results[node_type] = {
