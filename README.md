@@ -300,7 +300,12 @@ With 100+ containers across multiple hosts:
    cat /proc/sys/fs/file-max   # Should be >= 65536
    ```
 
-2. If limits are insufficient, see [HOST_CONFIGURATION.md](HOST_CONFIGURATION.md) for instructions on increasing them.
+2. If limits are insufficient, run this one-liner on your host to increase them:
+   ```bash
+   sudo bash -c 'echo "fs.nr_open = 1048576" >> /etc/sysctl.d/99-docker-limits.conf && echo "fs.file-max = 2097152" >> /etc/sysctl.d/99-docker-limits.conf && sysctl -p /etc/sysctl.d/99-docker-limits.conf && echo -e "*    soft    nofile    1048576\n*    hard    nofile    1048576\nroot soft    nofile    1048576\nroot hard    nofile    1048576" >> /etc/security/limits.conf && systemctl restart docker'
+   ```
+
+3. For detailed instructions, see [HOST_CONFIGURATION.md](HOST_CONFIGURATION.md).
 
 **Note**: Most modern Linux systems have adequate default limits and no configuration is needed. The reduced ulimit (from 1,048,576 to 65,536) allows many more containers to run before hitting system-wide limits.
 

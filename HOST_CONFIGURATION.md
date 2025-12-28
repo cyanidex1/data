@@ -42,6 +42,24 @@ ulimit -n
 
 If your system shows values lower than 65,536, you would need to:
 
+### Quick One-Liner (Recommended)
+
+Run this command to configure all limits at once:
+
+```bash
+sudo bash -c 'echo "fs.nr_open = 1048576" >> /etc/sysctl.d/99-docker-limits.conf && echo "fs.file-max = 2097152" >> /etc/sysctl.d/99-docker-limits.conf && sysctl -p /etc/sysctl.d/99-docker-limits.conf && echo -e "*    soft    nofile    1048576\n*    hard    nofile    1048576\nroot soft    nofile    1048576\nroot hard    nofile    1048576" >> /etc/security/limits.conf && systemctl restart docker'
+```
+
+This command will:
+- Set `fs.nr_open` to 1,048,576 (per-process limit)
+- Set `fs.file-max` to 2,097,152 (system-wide limit)
+- Update user limits in `/etc/security/limits.conf`
+- Restart Docker daemon to apply changes
+
+### Manual Configuration Steps
+
+Alternatively, you can configure each component manually:
+
 ### 1. Increase System Limits (requires root)
 
 Edit `/etc/sysctl.conf` or create `/etc/sysctl.d/99-custom-limits.conf`:
