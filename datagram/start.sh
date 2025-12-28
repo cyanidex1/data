@@ -27,6 +27,7 @@ echo "[*] Launching container '$CONTAINER_NAME' in background..."
 
 docker run \
   --platform linux/amd64 \
+  --cap-add=NET_ADMIN \
   --env LICENSE_KEY="$LICENSE_KEY" \
   --name "$CONTAINER_NAME" \
   --restart unless-stopped \
