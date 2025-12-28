@@ -9,4 +9,4 @@ if [ -z "$LICENSE_KEY" ]; then
 fi
 
 echo "[*] Running datagram with provided key"
-sudo /usr/local/bin/datagram run -- -key "$LICENSE_KEY"
+exec sudo -H /usr/local/bin/datagram run -- -key "$LICENSE_KEY"
