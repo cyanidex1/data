@@ -1,7 +1,7 @@
 FROM alpine:3.19
 
 # Install required packages
-RUN apk add --no-cache wget expect curl ca-certificates bash procps wireguard-tools iptables ip6tables
+RUN apk add --no-cache wget expect curl ca-certificates bash procps
 
 # Environment variables for credentials (passed at runtime)
 ENV NODE_EMAIL=""
