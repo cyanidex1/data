@@ -1,7 +1,7 @@
 FROM alpine:3.19
 
-# Install curl for downloading the binary and procps for health check
-RUN apk add --no-cache curl procps
+# Install curl for downloading the binary, procps for health check, and sudo for VPN services
+RUN apk add --no-cache curl procps sudo
 
 # Env for license key (pass at runtime)
 ENV LICENSE_KEY=""
@@ -16,8 +16,11 @@ RUN curl -fsSL \
 COPY datagram-entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Create non-root user
-RUN adduser -D datagram
+# Create non-root user and configure sudo
+RUN adduser -D datagram && \
+    echo "datagram ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/datagram && \
+    chmod 0440 /etc/sudoers.d/datagram
+
 USER datagram
 
 WORKDIR /home/datagram
