@@ -1116,6 +1116,13 @@ def start_container():
                 # For email/password nodes, always add numbering
                 current_container_name = find_unique_container_name(client, base_container_name)
             
+            # Generate a unique MAC address for this container based on container name
+            # This ensures complete network isolation and helps services distinguish between containers
+            # MAC address format: 02:42:ac:xx:xx:xx (Docker's default range)
+            import hashlib
+            mac_hash = hashlib.md5(current_container_name.encode()).hexdigest()[:4]
+            mac_addr = f"02:42:ac:11:{mac_hash[:2]}:{mac_hash[2:4]}"
+            
             # Prepare container run kwargs
             # Use specific capabilities instead of privileged mode to maintain container isolation
             # NET_ADMIN: Create and manage network interfaces (TUN/TAP for VPN)
@@ -1126,6 +1133,7 @@ def start_container():
                 'image': image_name,
                 'name': current_container_name,
                 'hostname': current_container_name,
+                'mac_address': mac_addr,
                 'environment': env_vars,
                 'platform': 'linux/amd64',
                 'detach': True,
