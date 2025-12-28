@@ -33,5 +33,6 @@ docker run \
   --restart unless-stopped \
   --memory="100m" \
   --memory-swap="200m" \
+  --ulimit nofile=65536:65536 \
   -d \
   datagram
