@@ -1972,6 +1972,38 @@ def rebuild_images():
                     }
                     continue
                 
+                # For datagram, download binaries if not present
+                if node_type == 'datagram':
+                    binaries_dir = os.path.join(dockerfiles_dir, 'binaries', '.datagram')
+                    if not os.path.exists(binaries_dir):
+                        print(f"[Image Rebuild] Downloading datagram binaries...")
+                        download_script = os.path.join(dockerfiles_dir, 'download-binaries.sh')
+                        if os.path.exists(download_script):
+                            try:
+                                download_result = subprocess.run(
+                                    [download_script],
+                                    cwd=dockerfiles_dir,
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=180  # 3 minutes for download
+                                )
+                                if download_result.returncode != 0:
+                                    print(f"[Image Rebuild] Warning: Binary download failed: {download_result.stderr}")
+                                    results[node_type] = {
+                                        'success': False,
+                                        'error': f'Failed to download binaries: {download_result.stderr}'
+                                    }
+                                    continue
+                                print(f"[Image Rebuild] Binaries downloaded successfully")
+                            except subprocess.TimeoutExpired:
+                                results[node_type] = {
+                                    'success': False,
+                                    'error': 'Binary download timed out after 3 minutes'
+                                }
+                                continue
+                        else:
+                            print(f"[Image Rebuild] Warning: download-binaries.sh not found")
+                
                 # Build the image using Docker API
                 # Use docker command via subprocess for better control
                 build_cmd = [

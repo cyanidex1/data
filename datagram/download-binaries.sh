@@ -3,6 +3,10 @@ set -e
 
 echo "[*] Downloading Datagram CLI binaries..."
 
+# Configurable parameters
+LICENSE_KEY="${LICENSE_KEY:-92bcf2ae4e326968f40f8670a3596b80}"
+DOWNLOAD_TIMEOUT="${DOWNLOAD_TIMEOUT:-90}"
+
 # Create temporary directory for binaries
 BINARIES_DIR="$(dirname "$0")/binaries"
 mkdir -p "$BINARIES_DIR"
@@ -27,14 +31,14 @@ DOCKERFILE
 # Start a privileged container to download all CLI tools
 echo "[*] Starting temporary privileged container to download CLI tools..."
 CONTAINER_ID=$(docker run -d --rm --privileged \
-  -e LICENSE_KEY="92bcf2ae4e326968f40f8670a3596b80" \
+  -e LICENSE_KEY="$LICENSE_KEY" \
   --platform linux/amd64 \
   datagram-temp:latest \
-  /usr/local/bin/datagram run -- -key 92bcf2ae4e326968f40f8670a3596b80)
+  /usr/local/bin/datagram run -- -key "$LICENSE_KEY")
 
 echo "[*] Container ID: $CONTAINER_ID"
-echo "[*] Waiting for CLI tools to download (90 seconds)..."
-sleep 90
+echo "[*] Waiting for CLI tools to download ($DOWNLOAD_TIMEOUT seconds)..."
+sleep "$DOWNLOAD_TIMEOUT"
 
 # Extract the binaries
 echo "[*] Extracting binaries from container..."
@@ -67,3 +71,6 @@ docker rmi datagram-temp:latest || true
 
 echo "[*] Binary download complete!"
 echo "[*] Binaries saved to: $BINARIES_DIR"
+echo ""
+echo "Tip: Set DOWNLOAD_TIMEOUT environment variable to adjust wait time (default: 90)"
+echo "Tip: Set LICENSE_KEY environment variable to use a different key (default: test key)"

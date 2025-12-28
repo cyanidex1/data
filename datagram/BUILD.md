@@ -4,7 +4,9 @@ This directory contains the Dockerfile and scripts for building the Datagram nod
 
 ## Quick Start
 
-### Step 1: Download Binaries
+### Option 1: Manual Build
+
+#### Step 1: Download Binaries
 
 Before building the Docker image, you need to download the VPN and Conference CLI binaries:
 
@@ -20,13 +22,22 @@ This script will:
 
 **Note:** This step requires Docker with privileged container support.
 
-### Step 2: Build the Image
+#### Step 2: Build the Image
 
 Once the binaries are downloaded, build the Docker image:
 
 ```bash
 docker build --platform linux/amd64 -t datagram .
 ```
+
+### Option 2: Using the Web UI
+
+When using the web control panel:
+
+1. **First startup**: The startup script automatically downloads binaries and builds the datagram image
+2. **Rebuild Images**: Click "Rebuild Images" in the admin panel - binaries are automatically downloaded if not present
+
+The web control panel handles the binary download process automatically, so you don't need to manually run `download-binaries.sh`.
 
 ## Why This Approach?
 
@@ -83,6 +94,13 @@ rm -rf binaries/
 docker build --platform linux/amd64 -t datagram .
 ```
 
+### Rebuild Images in Web UI
+
+When clicking "Rebuild Images" in the admin panel:
+- If binaries don't exist, they are automatically downloaded first (takes ~90 seconds)
+- The image is then rebuilt with `--no-cache`
+- Build process takes ~5 seconds after binaries are downloaded
+
 ## Automated Build
 
 For CI/CD pipelines, you can combine both steps:
@@ -98,4 +116,16 @@ fi
 
 # Build the image
 docker build --platform linux/amd64 -t datagram .
+```
+
+## Configuration
+
+The download script supports environment variables:
+
+- `LICENSE_KEY`: License key to use for downloading (default: test key)
+- `DOWNLOAD_TIMEOUT`: Seconds to wait for downloads (default: 90)
+
+Example:
+```bash
+DOWNLOAD_TIMEOUT=120 ./download-binaries.sh
 ```

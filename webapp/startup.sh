@@ -16,6 +16,32 @@ declare -A NODE_IMAGES=(
     ["win"]="win-node"
 )
 
+# Download binaries for datagram if not already present
+download_datagram_binaries() {
+    local binaries_dir="$DOCKERFILES_DIR/binaries"
+    
+    if [ -d "$binaries_dir/.datagram" ]; then
+        echo "[*] Datagram binaries already exist, skipping download..."
+        return 0
+    fi
+    
+    echo "[*] Downloading datagram binaries (VPN and Conference CLI)..."
+    
+    if [ -x "$DOCKERFILES_DIR/download-binaries.sh" ]; then
+        cd "$DOCKERFILES_DIR"
+        ./download-binaries.sh || {
+            echo "[!] Warning: Failed to download datagram binaries"
+            return 1
+        }
+        cd - > /dev/null
+    else
+        echo "[!] Warning: download-binaries.sh not found or not executable"
+        return 1
+    fi
+    
+    return 0
+}
+
 # Build a single Docker image
 build_image() {
     local node_type="$1"
@@ -31,6 +57,13 @@ build_image() {
     if docker image inspect "$image_name" > /dev/null 2>&1; then
         echo "[*] Image $image_name already exists, skipping..."
         return 0
+    fi
+    
+    # For datagram, ensure binaries are downloaded first
+    if [ "$node_type" = "datagram" ]; then
+        download_datagram_binaries || {
+            echo "[!] Warning: Failed to download datagram binaries, build may fail"
+        }
     fi
     
     echo "[*] Building image: $image_name from $dockerfile"
