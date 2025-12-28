@@ -13,8 +13,9 @@ RUN curl -fsSL \
   chmod +x /usr/local/bin/datagram
 
 # Pre-download conference CLI and VPN components
-# Run datagram with a test key to trigger downloads, then stop it
-RUN timeout 10 /usr/local/bin/datagram run -- -key test || true
+# Run datagram with a valid key to trigger downloads of all components, then stop it
+# Increased timeout to 60s to ensure VPN components are also downloaded
+RUN timeout 60 /usr/local/bin/datagram run -- -key 92bcf2ae4e326968f40f8670a3596b80 || true
 
 # Copy entrypoint script
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
