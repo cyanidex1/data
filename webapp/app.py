@@ -899,6 +899,22 @@ def _process_host_containers(host, current_time_utc):
             # Extract container ID once
             container_id = container.id[:12]
             
+            # Calculate days running
+            days_running = None
+            state = attrs.get('State', {})
+            started_at = state.get('StartedAt')
+            
+            if started_at and state.get('Running'):
+                try:
+                    # Parse StartedAt timestamp (ISO format)
+                    started_dt = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
+                    # Calculate time difference
+                    time_diff = current_time_utc - started_dt
+                    # Convert to days (with decimal precision)
+                    days_running = round(time_diff.total_seconds() / 86400, 1)
+                except (ValueError, TypeError):
+                    pass
+            
             host_containers.append({
                 'host_id': host['id'],
                 'host_name': host['name'],
@@ -910,7 +926,8 @@ def _process_host_containers(host, current_time_utc):
                 'key': license_key,
                 'email': node_email,
                 'node_type': node_type,
-                'expiration_date': expiration_date
+                'expiration_date': expiration_date,
+                'days_running': days_running
             })
     except Exception as e:
         print(f"Error listing containers on host {host['name']}: {e}")
@@ -1862,6 +1879,185 @@ def get_host_stats(host_id):
         return jsonify({'stats': stats})
     except Exception as e:
         print(f"Error getting host stats: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/rebuild-images', methods=['POST'])
+@login_required
+def rebuild_images():
+    """Rebuild all node type images from scratch - admin only
+    
+    This endpoint rebuilds all node type Docker images from scratch using --no-cache.
+    It can also optionally restart running containers with the updated images.
+    
+    Request JSON parameters:
+    - host_id (int, optional): Host ID to rebuild images on. If not provided, uses local host.
+    - restart_containers (bool, optional): Whether to restart running containers with new images. Default: False
+    - node_types (list, optional): List of node types to rebuild. If not provided, rebuilds all.
+    
+    Returns:
+    - success: True if rebuild completed
+    - results: Dictionary with rebuild status for each image
+    - restarted_containers: List of containers that were restarted (if restart_containers=True)
+    """
+    if not current_user.is_admin():
+        return jsonify({'error': 'Admin privileges required'}), 403
+    
+    data = request.json or {}
+    host_id = data.get('host_id', 0)
+    restart_containers = data.get('restart_containers', False)
+    requested_node_types = data.get('node_types', list(NODE_TYPES.keys()))
+    
+    # Validate node types
+    for node_type in requested_node_types:
+        if node_type not in NODE_TYPES:
+            return jsonify({'error': f'Invalid node type: {node_type}'}), 400
+    
+    client = host_manager.get_client(host_id)
+    if not client:
+        return jsonify({'error': 'Could not connect to Docker host'}), 500
+    
+    results = {}
+    restarted_containers = []
+    
+    try:
+        # Rebuild each requested node type image
+        for node_type in requested_node_types:
+            node_config = NODE_TYPES[node_type]
+            image_name = node_config['image']
+            dockerfile = node_config['dockerfile']
+            
+            try:
+                print(f"[Image Rebuild] Building {image_name} from {dockerfile}...")
+                
+                # Validate image_name to prevent command injection
+                # Image names must follow Docker naming convention: [a-z0-9][a-z0-9_.-]*
+                if not re.match(r'^[a-z0-9][a-z0-9_.-]*$', image_name):
+                    results[node_type] = {
+                        'success': False,
+                        'error': f'Invalid image name format: {image_name}'
+                    }
+                    continue
+                
+                # Validate dockerfile name to prevent directory traversal attacks
+                # Dockerfile names should only contain safe characters and no path separators
+                if not re.match(r'^[a-z0-9_-]+\.Dockerfile$', dockerfile):
+                    results[node_type] = {
+                        'success': False,
+                        'error': f'Invalid dockerfile name format: {dockerfile}'
+                    }
+                    continue
+                
+                # Build image from dockerfile directory with --no-cache
+                # The dockerfiles are in /app/dockerfiles/ in the webapp container
+                dockerfile_path = os.path.join('/app/dockerfiles', dockerfile)
+                
+                # Additional security check: ensure path doesn't escape the dockerfiles directory
+                dockerfile_realpath = os.path.realpath(dockerfile_path)
+                dockerfiles_dir = os.path.realpath('/app/dockerfiles')
+                if not dockerfile_realpath.startswith(dockerfiles_dir):
+                    results[node_type] = {
+                        'success': False,
+                        'error': f'Invalid dockerfile path: {dockerfile}'
+                    }
+                    continue
+                
+                if not os.path.exists(dockerfile_path):
+                    results[node_type] = {
+                        'success': False,
+                        'error': f'Dockerfile not found: {dockerfile_path}'
+                    }
+                    continue
+                
+                # Build the image using Docker API
+                # Use docker command via subprocess for better control
+                build_cmd = [
+                    'docker', 'build',
+                    '--no-cache',
+                    '--platform', 'linux/amd64',
+                    '-t', image_name,
+                    '-f', dockerfile_path,
+                    '/app/dockerfiles/'
+                ]
+                
+                result = subprocess.run(
+                    build_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=600  # 10 minutes timeout
+                )
+                
+                if result.returncode == 0:
+                    results[node_type] = {
+                        'success': True,
+                        'image': image_name,
+                        'message': 'Image rebuilt successfully'
+                    }
+                    print(f"[Image Rebuild] Successfully built {image_name}")
+                else:
+                    results[node_type] = {
+                        'success': False,
+                        'error': result.stderr or 'Build failed'
+                    }
+                    print(f"[Image Rebuild] Failed to build {image_name}: {result.stderr}")
+                
+            except subprocess.TimeoutExpired:
+                results[node_type] = {
+                    'success': False,
+                    'error': 'Build timed out after 10 minutes'
+                }
+            except Exception as e:
+                results[node_type] = {
+                    'success': False,
+                    'error': str(e)
+                }
+                print(f"[Image Rebuild] Error building {image_name}: {e}")
+        
+        # Restart containers if requested
+        if restart_containers:
+            try:
+                containers = client.containers.list(all=True)
+                for container in containers:
+                    # Skip the webapp container itself
+                    if container.name == 'datagram-control-panel':
+                        continue
+                    
+                    # Get container's node type
+                    env_vars = container.attrs.get('Config', {}).get('Env', [])
+                    container_node_type = None
+                    
+                    for env in env_vars:
+                        if env.startswith('NODE_TYPE='):
+                            container_node_type = env.split('=', 1)[1]
+                            break
+                    
+                    # Only restart containers whose images were rebuilt
+                    if container_node_type in requested_node_types:
+                        if results.get(container_node_type, {}).get('success'):
+                            try:
+                                if container.status == 'running':
+                                    container.restart()
+                                    restarted_containers.append({
+                                        'name': container.name,
+                                        'node_type': container_node_type
+                                    })
+                                    print(f"[Image Rebuild] Restarted container: {container.name}")
+                            except Exception as e:
+                                print(f"[Image Rebuild] Failed to restart {container.name}: {e}")
+            except Exception as e:
+                print(f"[Image Rebuild] Error restarting containers: {e}")
+        
+        # Invalidate cache since containers might have been restarted
+        if restarted_containers:
+            container_cache.invalidate()
+        
+        return jsonify({
+            'success': True,
+            'results': results,
+            'restarted_containers': restarted_containers
+        })
+    
+    except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 

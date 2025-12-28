@@ -1062,6 +1062,7 @@
                                 <th>Type</th>
                                 <th>Status</th>
                                 <th>Key/Email</th>
+                                <th>Running Days</th>
                                 <th>Expiration</th>
                                 <th>Actions</th>
                             </tr>
@@ -1078,6 +1079,7 @@
                                     <td><span class="badge badge-node-type">${c.node_type || 'datagram'}</span></td>
                                     <td><span class="status status-${c.status}">${c.status}</span></td>
                                     <td><code>${c.key || c.email || 'N/A'}</code></td>
+                                    <td style="font-size: 12px; color: #8b949e;">${c.days_running !== null && c.days_running !== undefined ? `${c.days_running} days` : 'N/A'}</td>
                                     <td style="font-size: 12px; color: #8b949e;">${c.expiration_date ? new Date(c.expiration_date).toLocaleString() : 'Never'}</td>
                                     <td>
                                         <div class="actions">
