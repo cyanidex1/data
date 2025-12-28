@@ -4,7 +4,22 @@ This directory contains the Dockerfile and scripts for building the Datagram nod
 
 ## Quick Start
 
-### Option 1: Manual Build
+### Option 1: Using the Build Script (Recommended)
+
+The easiest way to build the image:
+
+```bash
+./build.sh
+```
+
+This script will:
+1. Check if binaries are downloaded
+2. Provide clear error messages if binaries are missing
+3. Build the Docker image automatically
+
+If binaries aren't found, it will tell you to run `./download-binaries.sh` first.
+
+### Option 2: Manual Build
 
 #### Step 1: Download Binaries
 
@@ -20,7 +35,7 @@ This script will:
 3. Extract the binaries to the `binaries/.datagram/` directory
 4. Clean up the temporary container
 
-**Note:** This step requires Docker with privileged container support.
+**Note:** This step requires Docker with privileged container support and takes about 90 seconds.
 
 #### Step 2: Build the Image
 
@@ -30,7 +45,9 @@ Once the binaries are downloaded, build the Docker image:
 docker build --platform linux/amd64 -t datagram .
 ```
 
-### Option 2: Using the Web UI
+**Important:** If you try to build without downloading binaries first, you'll get an error. Use `./build.sh` to avoid this.
+
+### Option 3: Using the Web UI
 
 When using the web control panel:
 
@@ -60,6 +77,7 @@ By using a helper script that runs a privileged container first, we can extract 
 ```
 datagram/
 ├── Dockerfile                 # Main Dockerfile that copies pre-downloaded binaries
+├── build.sh                   # Helper script to build image (checks for binaries first)
 ├── download-binaries.sh       # Script to download binaries from privileged container
 ├── binaries/                  # Auto-generated directory (gitignored)
 │   └── .datagram/

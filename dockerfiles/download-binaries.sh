@@ -62,8 +62,9 @@ else
   echo "  ✗ VPN CLI not found"
 fi
 
-# Cleanup temp image
-docker rmi datagram-temp:latest || true
+# Cleanup temp image - force remove since container might still be referenced
+echo "[*] Cleaning up temporary image..."
+docker rmi -f datagram-temp:latest 2>/dev/null || true
 
 echo "[*] Binary download complete!"
 echo "[*] Binaries saved to: $BINARIES_DIR"

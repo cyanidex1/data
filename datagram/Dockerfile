@@ -14,7 +14,8 @@ RUN curl -fsSL \
 
 # Copy pre-downloaded VPN and Conference CLI binaries
 # These binaries are extracted from a privileged container run by download-binaries.sh
-# Run ./download-binaries.sh before building this image to populate the binaries directory
+# IMPORTANT: Run ./download-binaries.sh BEFORE building this image
+# If binaries don't exist, the build will fail with a clear error message
 COPY binaries/.datagram /root/.datagram
 
 # Copy entrypoint script
