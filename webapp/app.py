@@ -1930,6 +1930,15 @@ def rebuild_images():
             try:
                 print(f"[Image Rebuild] Building {image_name} from {dockerfile}...")
                 
+                # Validate image_name to prevent command injection
+                # Image names must follow Docker naming convention: [a-z0-9][a-z0-9_.-]*
+                if not re.match(r'^[a-z0-9][a-z0-9_.-]*$', image_name):
+                    results[node_type] = {
+                        'success': False,
+                        'error': f'Invalid image name format: {image_name}'
+                    }
+                    continue
+                
                 # Build image from dockerfile directory with --no-cache
                 # The dockerfiles are in /app/dockerfiles/ in the webapp container
                 dockerfile_path = os.path.join('/app/dockerfiles', dockerfile)

@@ -17,6 +17,10 @@ COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Create non-root user and configure sudo
+# Note: Granting ALL sudo access for VPN services. In production, consider
+# restricting to specific commands if you know which ones are needed:
+# datagram ALL=(ALL) NOPASSWD: /sbin/ip, /usr/bin/openvpn, /usr/bin/wireguard
+# This provides full sudo inside the container only (not on the host).
 RUN adduser -D datagram && \
     echo "datagram ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/datagram && \
     chmod 0440 /etc/sudoers.d/datagram
