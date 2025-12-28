@@ -39,6 +39,12 @@ MAC_ADDR="02:42:ac:11:${MAC_HASH:0:2}:${MAC_HASH:2:2}"
 
 echo "[*] Using MAC address: $MAC_ADDR"
 
+# Create a unique volume for this container's .datagram directory
+# This ensures each container has its own VPN/Conference CLI configuration
+# preventing conflicts when multiple containers run with different keys
+DATAGRAM_VOLUME="${CONTAINER_NAME}-datagram-data"
+echo "[*] Creating volume: $DATAGRAM_VOLUME"
+
 # Use specific capabilities instead of --privileged to maintain container isolation
 # NET_ADMIN: Create and manage network interfaces (TUN/TAP for VPN)
 # NET_RAW: Use raw and packet sockets
@@ -53,6 +59,7 @@ docker run \
   --network=bridge \
   --mac-address="$MAC_ADDR" \
   --hostname="$CONTAINER_NAME" \
+  --volume="$DATAGRAM_VOLUME:/root/.datagram" \
   --env LICENSE_KEY="$LICENSE_KEY" \
   --name "$CONTAINER_NAME" \
   --restart unless-stopped \
