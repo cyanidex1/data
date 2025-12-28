@@ -15,7 +15,9 @@
 
 ### Commands Used
 ```bash
-./docker-quick-start.sh start 92bcf2ae4e326968f40f8670a3596b80 9714b1c2371c484b97b4db67132e26c5
+cd datagram
+./start.sh 92bcf2ae4e326968f40f8670a3596b80
+./start.sh 9714b1c2371c484b97b4db67132e26c5
 ```
 
 ## Verification Results
@@ -245,7 +247,9 @@ This is the **recommended approach** because:
 
 ```bash
 # 1. Start two containers
-./docker-quick-start.sh start 92bcf2ae4e326968f40f8670a3596b80 9714b1c2371c484b97b4db67132e26c5
+cd datagram
+./start.sh 92bcf2ae4e326968f40f8670a3596b80
+./start.sh 9714b1c2371c484b97b4db67132e26c5
 
 # 2. Verify namespace independence
 docker exec node1 readlink /proc/self/ns/net
@@ -267,5 +271,5 @@ docker exec node2 ip link show wg0
 ## Additional Information
 
 - **Documentation**: See [DOCKER_WITH_SUDO.md](DOCKER_WITH_SUDO.md) for complete guide
-- **Quick Start Script**: Use `./docker-quick-start.sh` for easy management
+- **Start Script**: Use `datagram/start.sh` for easy container creation
 - **Main README**: See [README.md](README.md) for web interface setup

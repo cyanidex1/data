@@ -14,15 +14,9 @@ User wanted to run `sudo datagram run -- -key <key>` to create WireGuard network
 - **DOCKER_WITH_SUDO.md** - Comprehensive guide explaining how Docker containers run datagram with sudo-like privileges
 - **VERIFICATION_REPORT.md** - Complete test results showing independent interface creation
 - **README.md** - Updated with Docker-focused installation information
+- **WHY_DOCKER.md** - Explanation of why Docker is the solution
 
-### 2. Management Tools
-- **docker-quick-start.sh** - Easy-to-use script for managing multiple datagram containers
-  - Build images
-  - Start containers with license keys
-  - List, view details, show logs
-  - Stop and remove containers
-
-### 3. Verification Tests
+### 2. Verification Tests
 Performed complete verification with two containers:
 - **Container 1**: `92bcf2ae4e326968f40f8670a3596b80`
 - **Container 2**: `9714b1c2371c484b97b4db67132e26c5`
@@ -46,22 +40,16 @@ Each container runs with:
 - Both containers can create `wg0`, `wg1`, `wg2` without conflicts
 - Interfaces are completely independent and isolated
 
-### Easy Management
+### Easy Management with Existing Scripts
 ```bash
-# Build image
-./docker-quick-start.sh build
+# Using the existing start.sh script
+cd datagram
+./start.sh 92bcf2ae4e326968f40f8670a3596b80
+./start.sh 9714b1c2371c484b97b4db67132e26c5
 
-# Start containers with your keys
-./docker-quick-start.sh start 92bcf2ae4e326968f40f8670a3596b80 9714b1c2371c484b97b4db67132e26c5
-
-# List all containers
-./docker-quick-start.sh list
-
-# View details including WireGuard interfaces
-./docker-quick-start.sh details node1
-
-# View logs
-./docker-quick-start.sh logs node1
+# Or use the web interface
+docker compose up -d
+# Open http://localhost:5000
 ```
 
 ## 🏗️ Architecture
@@ -118,22 +106,7 @@ All tests passed successfully!
 
 ## 🚀 Quick Start for Users
 
-### For New Users
-```bash
-# 1. Build the datagram image
-./docker-quick-start.sh build
-
-# 2. Start containers with your license keys
-./docker-quick-start.sh start YOUR_KEY_1 YOUR_KEY_2
-
-# 3. Verify they're running
-./docker-quick-start.sh list
-
-# 4. Check the interfaces
-./docker-quick-start.sh details node1
-```
-
-### Using Existing Start Script
+### Using Existing Start Script (Recommended)
 ```bash
 cd datagram
 
@@ -177,10 +150,11 @@ The repository has been cleaned up and is production-ready:
 
 ## 📈 What Changed in This PR
 
-### Files Added (3)
+### Files Added (4)
 - `DOCKER_WITH_SUDO.md` - Comprehensive Docker guide
 - `VERIFICATION_REPORT.md` - Test results
-- `docker-quick-start.sh` - Management script
+- `WHY_DOCKER.md` - Explanation of why Docker is the solution
+- `TASK_COMPLETE.md` - Task completion summary
 
 ### Files Modified (1)
 - `README.md` - Updated with Docker-focused information

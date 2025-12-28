@@ -90,14 +90,6 @@ docker compose up -d
 
 The web UI does the same thing - creates Docker containers!
 
-### Option 3: docker-quick-start.sh (New - convenience tool)
-
-```bash
-./docker-quick-start.sh start KEY1 KEY2 KEY3
-```
-
-This is just a convenience wrapper around the existing functionality.
-
 ## Why Docker is Better Than Running on Host
 
 | Aspect | Direct on Host | Docker Containers |
@@ -131,8 +123,7 @@ This is just a convenience wrapper around the existing functionality.
 ## What We Added to Your Repo
 
 1. **Documentation** (DOCKER_WITH_SUDO.md) - Explains HOW the existing Docker setup works
-2. **Verification** (VERIFICATION_REPORT.md) - Proves it creates independent interfaces  
-3. **Convenience Tool** (docker-quick-start.sh) - Easier way to use existing functionality
+2. **Verification** (VERIFICATION_REPORT.md) - Proves it creates independent interfaces
 
 ## Bottom Line
 
@@ -148,7 +139,6 @@ This is just a convenience wrapper around the existing functionality.
 The work we did was to:
 - Document that your existing Docker setup already solves the problem
 - Verify it creates independent WireGuard interfaces
-- Add a convenience script to make it even easier
 
 ## If You Want to Run on Host Instead
 
@@ -167,6 +157,5 @@ If you really want to run `sudo datagram run` directly on the host without Docke
 - **Docker solves the interface conflict problem** ✅  
 - **We verified it works perfectly** ✅
 - **We documented how it works** ✅
-- **docker-quick-start.sh is optional** (just makes it easier)
 
 **Recommendation**: Keep using Docker! It's already set up and working perfectly.
