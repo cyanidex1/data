@@ -366,6 +366,21 @@
             </div>
         </div>
 
+        <!-- Image Management -->
+        <div class="card">
+            <div class="card-header">
+                <span>🔄</span> Image Management
+                <button onclick="showRebuildImagesModal()" class="btn btn-primary btn-sm">🔨 Rebuild Images</button>
+            </div>
+            <div class="card-body">
+                <p style="margin-bottom: 12px;">Rebuild all node type Docker images from scratch. This is useful when datagram gets frequent updates.</p>
+                <div class="alert" style="background: var(--card-bg-color); border-color: var(--border-color); color: var(--text-muted-color); margin-bottom: 0;">
+                    <strong>Note:</strong> Images are rebuilt using <code>--no-cache</code> flag to ensure fresh builds. 
+                    Optionally, you can restart running containers to apply the new images.
+                </div>
+            </div>
+        </div>
+
         <!-- Docker Hosts -->
         <div class="card">
             <div class="card-header">
@@ -580,6 +595,48 @@
         </div>
     </div>
 
+    <!-- Rebuild Images Modal -->
+    <div id="rebuild-images-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">🔨 Rebuild Container Images</div>
+            <form id="rebuild-images-form">
+                <div class="modal-body">
+                    <p style="margin-bottom: 16px; color: var(--text-muted-color);">
+                        This will rebuild all node type images from scratch using <code>--no-cache</code>. 
+                        Useful for applying updates from the datagram CLI or other node software.
+                    </p>
+                    <div class="form-group">
+                        <label for="rebuild-host-id">Docker Host</label>
+                        <select id="rebuild-host-id" required>
+                            {% for host in hosts %}
+                            <option value="{{ host.id }}">{{ host.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="rebuild-restart-containers" style="width: auto; margin-right: 8px;">
+                            Restart running containers after rebuild
+                        </label>
+                        <div class="help-text">
+                            If checked, all running containers will be restarted to use the newly built images.
+                        </div>
+                    </div>
+                    <div id="rebuild-progress" style="display: none;">
+                        <div class="alert" style="background: var(--card-bg-color); border-color: var(--border-color); color: var(--text-color); margin-bottom: 0;">
+                            <strong>⏳ Rebuilding...</strong><br>
+                            <span id="rebuild-status">Starting rebuild process...</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" onclick="closeRebuildImagesModal()" class="btn btn-secondary">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="rebuild-submit-btn">🔨 Rebuild All Images</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('add-user-form').addEventListener('submit', function(e) {
@@ -600,6 +657,11 @@
             document.getElementById('edit-host-form').addEventListener('submit', function(e) {
                 e.preventDefault();
                 updateHost();
+            });
+            
+            document.getElementById('rebuild-images-form').addEventListener('submit', function(e) {
+                e.preventDefault();
+                rebuildImages();
             });
             
             // Add listener for remove memory limit checkbox to update UI
@@ -881,6 +943,82 @@
             if (event.target === statsModal) closeStatsModal();
             if (event.target === editUserModal) closeEditUserModal();
             if (event.target === editHostModal) closeEditHostModal();
+            
+            const rebuildModal = document.getElementById('rebuild-images-modal');
+            if (event.target === rebuildModal) closeRebuildImagesModal();
+        }
+        
+        // Rebuild Images functions
+        function showRebuildImagesModal() {
+            document.getElementById('rebuild-images-modal').style.display = 'flex';
+            document.getElementById('rebuild-progress').style.display = 'none';
+        }
+        
+        function closeRebuildImagesModal() {
+            document.getElementById('rebuild-images-modal').style.display = 'none';
+            document.getElementById('rebuild-images-form').reset();
+            document.getElementById('rebuild-progress').style.display = 'none';
+        }
+        
+        async function rebuildImages() {
+            const hostId = document.getElementById('rebuild-host-id').value;
+            const restartContainers = document.getElementById('rebuild-restart-containers').checked;
+            const submitBtn = document.getElementById('rebuild-submit-btn');
+            const progressDiv = document.getElementById('rebuild-progress');
+            const statusSpan = document.getElementById('rebuild-status');
+            
+            // Show progress
+            progressDiv.style.display = 'block';
+            submitBtn.disabled = true;
+            statusSpan.textContent = 'Starting rebuild process...';
+            
+            try {
+                const response = await fetch('/api/admin/rebuild-images', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        host_id: parseInt(hostId),
+                        restart_containers: restartContainers
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    let message = 'Images rebuilt successfully!\n\n';
+                    
+                    // Show results for each node type
+                    for (const [nodeType, result] of Object.entries(data.results)) {
+                        if (result.success) {
+                            message += `✓ ${nodeType}: ${result.message}\n`;
+                        } else {
+                            message += `✗ ${nodeType}: ${result.error}\n`;
+                        }
+                    }
+                    
+                    // Show restarted containers if any
+                    if (data.restarted_containers && data.restarted_containers.length > 0) {
+                        message += `\nRestarted ${data.restarted_containers.length} container(s):\n`;
+                        data.restarted_containers.forEach(c => {
+                            message += `  - ${c.name} (${c.node_type})\n`;
+                        });
+                    }
+                    
+                    showAlert(message, 'success');
+                    closeRebuildImagesModal();
+                    
+                    // Reload page after 2 seconds to show updated information
+                    setTimeout(() => location.reload(), 2000);
+                } else {
+                    showAlert(data.error || 'Failed to rebuild images', 'error');
+                    submitBtn.disabled = false;
+                    progressDiv.style.display = 'none';
+                }
+            } catch (error) {
+                showAlert('Error: ' + error.message, 'error');
+                submitBtn.disabled = false;
+                progressDiv.style.display = 'none';
+            }
         }
         
         
