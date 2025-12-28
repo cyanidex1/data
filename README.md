@@ -288,6 +288,22 @@ With 100+ containers across multiple hosts:
 
 ## Troubleshooting
 
+### "Too many open files" error
+
+**Error**: `failed to bring device up: too many open files`
+
+**Solution**: The control panel automatically sets container ulimits to 1,048,576 file descriptors. This should be sufficient for most workloads. If you still see this error:
+
+1. Check your host system limits:
+   ```bash
+   cat /proc/sys/fs/nr_open    # Should be >= 1048576
+   cat /proc/sys/fs/file-max   # Should be >= 1048576
+   ```
+
+2. If limits are insufficient, see [HOST_CONFIGURATION.md](HOST_CONFIGURATION.md) for instructions on increasing them.
+
+**Note**: Most modern Linux systems have adequate default limits and no configuration is needed.
+
 ### Cannot connect to Docker daemon
 
 **Error**: `Cannot connect to Docker host`
