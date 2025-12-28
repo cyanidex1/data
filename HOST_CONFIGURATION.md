@@ -13,15 +13,15 @@ After checking your current environment:
 ✓ fs.file-max (system-wide limit):   9,223,372,036,854,775,807
 ```
 
-**Your system is already properly configured!** The container ulimit of 1,048,576 we're setting is exactly equal to `fs.nr_open`, which is perfect.
+**Your system is already properly configured!** The container ulimit of 65,536 we're setting is well below `fs.nr_open`, which is perfect.
 
 ## When Would Host Configuration Be Needed?
 
 You would need to modify the host system **ONLY IF**:
 
-1. `fs.nr_open` is less than 1,048,576
-2. `fs.file-max` is less than 1,048,576
-3. You want to increase the ulimit beyond 1,048,576 in the future
+1. `fs.nr_open` is less than 65,536
+2. `fs.file-max` is less than 65,536
+3. You want to increase the ulimit beyond 65,536 in the future
 
 ## How to Check Your Host Limits
 
@@ -40,7 +40,7 @@ ulimit -n
 
 ## If Configuration Is Needed (Rare)
 
-If your system shows values lower than 1,048,576, you would need to:
+If your system shows values lower than 65,536, you would need to:
 
 ### 1. Increase System Limits (requires root)
 
@@ -78,10 +78,10 @@ sudo systemctl restart docker
 
 ## Why This Matters
 
-- **Container ulimit (1,048,576)** ≤ **Host fs.nr_open** ✓
+- **Container ulimit (65,536)** ≤ **Host fs.nr_open** ✓
 - Docker containers inherit limits from the host
 - If container ulimit > host limit, container will fail to start
-- The fix we implemented sets the container limit to the maximum safe value
+- The fix we implemented sets the container limit to a reasonable value that allows 100+ containers to run simultaneously
 
 ## Verification After Container Start
 
@@ -93,7 +93,7 @@ docker ps
 
 # Check the container's ulimit
 docker exec <container_id> sh -c "ulimit -n"
-# Should show: 1048576
+# Should show: 65536
 
 # Or check from the host
 docker inspect <container_id> | grep -A 5 Ulimits
@@ -102,7 +102,18 @@ docker inspect <container_id> | grep -A 5 Ulimits
 ## Summary
 
 ✅ **No host configuration needed** - Your system limits are already sufficient  
-✅ **Container ulimit: 1,048,576** - Matches fs.nr_open perfectly  
+✅ **Container ulimit: 65,536** - Optimized for running 100+ containers simultaneously  
 ✅ **Ready to use** - Just rebuild/restart containers with the updated code
 
-The changes we made to `datagram/start.sh` and `webapp/app.py` are sufficient to fix the "too many open files" error.
+The changes we made to `datagram/start.sh` and `webapp/app.py` are sufficient to fix the "too many open files" error when running many containers.
+
+## Why 65,536 Instead of 1,048,576?
+
+The previous limit of 1,048,576 was excessive and caused problems when running many containers:
+- **With old limit**: 60 containers × 1,048,576 = ~63 million file descriptors (exhausts system resources)
+- **With new limit**: 100+ containers × 65,536 = ~6.5 million file descriptors (manageable)
+
+For VPN-based datagram nodes, 65,536 file descriptors is more than sufficient for:
+- Tunnel interfaces (TUN/TAP devices)
+- Network connections
+- Log files and other I/O operations
