@@ -217,6 +217,10 @@ The control panel supports the following environment variables:
 
 - `SECRET_KEY`: Flask secret key (change in production)
 - `DEBUG`: Enable debug mode (`True` or `False`)
+- `CONTAINER_ULIMIT`: File descriptor limit per container (default: `8192`)
+  - Supports running 500+ containers with default value
+  - Increase to `16384` or higher if individual containers need more file descriptors
+  - Lower values may cause "too many open files" errors in VPN/WireGuard operations
 
 ### Persistent Data
 
@@ -292,22 +296,36 @@ With 100+ containers across multiple hosts:
 
 **Error**: `failed to bring device up: too many open files`
 
-**Solution**: The control panel automatically sets container ulimits to 1,048,576 file descriptors. If you see this error, you need to configure your host system limits:
+**Root Cause**: This error typically appears after running 60-70+ containers due to file descriptor exhaustion.
 
-1. Check your host system limits:
+**Solution**: The system now uses a default ulimit of **8,192 file descriptors per container**, which supports running **500+ containers** on a single host without special configuration.
+
+**If you still see this error:**
+
+1. Check your container ulimit:
    ```bash
-   cat /proc/sys/fs/nr_open    # Should be >= 1048576
-   cat /proc/sys/fs/file-max   # Should be very large
+   docker exec <container_name> sh -c "ulimit -n"
+   # Should show: 8192
    ```
 
-2. Run this one-liner on your host to increase them:
+2. If using the old configuration, restart containers with the new settings:
    ```bash
-   sudo bash -c 'echo "fs.nr_open = 1048576" > /etc/sysctl.d/99-docker-limits.conf && echo "fs.file-max = 9223372036854775807" >> /etc/sysctl.d/99-docker-limits.conf && sysctl -p /etc/sysctl.d/99-docker-limits.conf && grep -q "nofile.*1048576" /etc/security/limits.conf || echo -e "*    soft    nofile    1048576\n*    hard    nofile    1048576\nroot soft    nofile    1048576\nroot hard    nofile    1048576" >> /etc/security/limits.conf && systemctl restart docker'
+   # Stop old containers
+   docker stop $(docker ps -q --filter ancestor=datagram)
+   
+   # Pull latest changes and restart
+   docker compose down && docker compose up -d
    ```
 
-3. For detailed instructions, see [HOST_CONFIGURATION.md](HOST_CONFIGURATION.md).
+3. (Optional) Increase the per-container limit if needed:
+   ```bash
+   export CONTAINER_ULIMIT=16384
+   docker compose up -d
+   ```
 
-**Note**: The ulimit of 1,048,576 provides sufficient file descriptors for VPN/WireGuard operations while allowing multiple containers to run simultaneously. The one-liner command is safe to run multiple times.
+4. For deployments with 500+ containers, see [HOST_CONFIGURATION.md](HOST_CONFIGURATION.md) for advanced host configuration.
+
+**Note**: The new default of 8,192 provides sufficient file descriptors for VPN/WireGuard operations while allowing 500+ containers to run simultaneously without host configuration.
 
 ### Cannot connect to Docker daemon
 

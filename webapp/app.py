@@ -36,6 +36,12 @@ HOSTS_FILE = os.path.join(DATA_DIR, 'docker_hosts.json')
 USERS_FILE = os.path.join(DATA_DIR, 'users.json')
 DEFAULT_IMAGE = 'datagram'
 
+# Container resource limits
+# Default ulimit for file descriptors per container
+# 8192 is sufficient for VPN/WireGuard operations while allowing 100+ containers
+# Can be increased via CONTAINER_ULIMIT environment variable if needed
+CONTAINER_ULIMIT = int(os.environ.get('CONTAINER_ULIMIT', '8192'))
+
 # Performance constants
 EXPECTED_ENV_VAR_COUNT = 4  # Number of environment variables we look for in containers
 
@@ -1119,7 +1125,7 @@ def start_container():
                 'detach': True,
                 'restart_policy': {'Name': 'on-failure', 'MaximumRetryCount': 3},
                 'privileged': True,
-                'ulimits': [docker.types.Ulimit(name='nofile', soft=1048576, hard=1048576)]
+                'ulimits': [docker.types.Ulimit(name='nofile', soft=CONTAINER_ULIMIT, hard=CONTAINER_ULIMIT)]
             }
             
             # Start the container
@@ -1438,7 +1444,7 @@ def update_container_expiration(host_id, container_id):
             'detach': True,
             'restart_policy': restart_policy,
             'privileged': True,
-            'ulimits': [docker.types.Ulimit(name='nofile', soft=1048576, hard=1048576)]
+            'ulimits': [docker.types.Ulimit(name='nofile', soft=CONTAINER_ULIMIT, hard=CONTAINER_ULIMIT)]
         }
         
         new_container = client.containers.run(**container_kwargs)
@@ -1779,7 +1785,7 @@ def import_keys():
                     'detach': True,
                     'restart_policy': {'Name': 'on-failure', 'MaximumRetryCount': 3},
                     'privileged': True,
-                    'ulimits': [docker.types.Ulimit(name='nofile', soft=1048576, hard=1048576)]
+                    'ulimits': [docker.types.Ulimit(name='nofile', soft=CONTAINER_ULIMIT, hard=CONTAINER_ULIMIT)]
                 }
                 
                 container = client.containers.run(**container_kwargs)
