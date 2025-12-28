@@ -41,12 +41,22 @@ echo "[*] Extracting binaries from container..."
 docker cp "$CONTAINER_ID:/root/.datagram" "$BINARIES_DIR/" || {
   echo "[!] Failed to extract binaries"
   docker stop "$CONTAINER_ID" 2>/dev/null || true
+  docker rm -f "$CONTAINER_ID" 2>/dev/null || true
+  docker rmi -f datagram-temp:latest 2>/dev/null || true
   exit 1
 }
 
-# Stop the container
-echo "[*] Stopping temporary container..."
-docker stop "$CONTAINER_ID" || true
+# Stop and remove the container
+echo "[*] Stopping and removing temporary container..."
+docker stop "$CONTAINER_ID" 2>/dev/null || true
+docker rm -f "$CONTAINER_ID" 2>/dev/null || true
+
+# Wait a moment for container to fully stop
+sleep 2
+
+# Remove any anonymous volumes created by the container
+echo "[*] Cleaning up any orphaned volumes..."
+docker volume prune -f 2>/dev/null || true
 
 # Verify binaries were downloaded
 echo "[*] Verifying downloaded binaries..."

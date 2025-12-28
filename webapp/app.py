@@ -1998,13 +1998,35 @@ def rebuild_images():
                             )
                             if download_result.returncode != 0:
                                 print(f"[Image Rebuild] Warning: Binary download failed: {download_result.stderr}")
+                                # Ensure cleanup even on failure
+                                subprocess.run(
+                                    ['docker', 'rm', '-f', 'datagram-temp'],
+                                    capture_output=True,
+                                    timeout=30
+                                )
+                                subprocess.run(
+                                    ['docker', 'rmi', '-f', 'datagram-temp:latest'],
+                                    capture_output=True,
+                                    timeout=30
+                                )
                                 results[node_type] = {
                                     'success': False,
                                     'error': f'Failed to download binaries: {download_result.stderr}'
                                 }
                                 continue
                             print(f"[Image Rebuild] Binaries downloaded successfully")
+                            # Extra cleanup step to ensure no leftover resources
+                            print(f"[Image Rebuild] Verifying cleanup...")
+                            subprocess.run(
+                                ['docker', 'ps', '-a', '-q', '--filter', 'ancestor=datagram-temp:latest'],
+                                capture_output=True,
+                                timeout=10
+                            )
                         except subprocess.TimeoutExpired:
+                            # Cleanup on timeout
+                            print(f"[Image Rebuild] Timeout - cleaning up resources...")
+                            subprocess.run(['docker', 'rm', '-f', 'datagram-temp'], capture_output=True, timeout=30)
+                            subprocess.run(['docker', 'rmi', '-f', 'datagram-temp:latest'], capture_output=True, timeout=30)
                             results[node_type] = {
                                 'success': False,
                                 'error': 'Binary download timed out after 3 minutes'

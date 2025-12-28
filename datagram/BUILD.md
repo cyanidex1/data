@@ -33,6 +33,7 @@ This script will:
 1. Create a temporary Docker image with the datagram CLI
 2. Start a privileged container to trigger both VPN and Conference CLI downloads
 3. Extract the binaries to the `binaries/.datagram/` directory
+4. **Fully clean up** the temporary container, volumes, and image
 4. Clean up the temporary container
 
 **Note:** This step requires Docker with privileged container support and takes about 90 seconds.
@@ -104,6 +105,22 @@ The download script requires:
 - Docker with privileged container support
 - Network access to download the datagram CLI
 - At least 200MB of free disk space
+
+### Leftover temporary containers or images
+
+If the download process is interrupted, you may have leftover resources. Clean them up with:
+```bash
+# Remove any leftover containers
+docker rm -f $(docker ps -a -q --filter ancestor=datagram-temp:latest) 2>/dev/null
+
+# Remove temporary image
+docker rmi -f datagram-temp:latest 2>/dev/null
+
+# Clean up orphaned volumes
+docker volume prune -f
+```
+
+The download script automatically cleans up after itself, but manual cleanup may be needed if the script is forcefully terminated.
 
 ### Binaries are outdated
 
