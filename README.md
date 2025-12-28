@@ -4,6 +4,19 @@ A web-based control panel for managing Docker containers running Datagram nodes 
 
 ![Control Panel Screenshot](https://github.com/user-attachments/assets/56856c2c-0b96-4104-ad49-869eaf15f998)
 
+## Installation Options
+
+### Docker Installation (Recommended)
+Run Datagram nodes in isolated Docker containers with a web-based control panel. Ideal for most users.
+
+### Native Installation
+Run Datagram directly on your Linux host with systemd services. See [native-install/NATIVE_INSTALL.md](native-install/NATIVE_INSTALL.md) for details.
+
+**When to use native installation:**
+- You want to run `sudo datagram run` directly on the host
+- You need multiple instances with separate WireGuard interfaces (wg0, wg1, wg2, etc.)
+- You prefer systemd service management over Docker
+
 ## ⚡ Quick Start (One-Liner)
 
 ```bash
