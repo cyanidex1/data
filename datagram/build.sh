@@ -55,7 +55,10 @@ if [ $? -eq 0 ]; then
     echo "[*] ✓ Image built successfully!"
     echo ""
     echo "You can now run containers with:"
-    echo "    docker run -d --privileged -e LICENSE_KEY='your-key' datagram"
+    echo "    docker run -d --cap-add=NET_ADMIN --cap-add=NET_RAW --cap-add=SYS_MODULE --device=/dev/net/tun:/dev/net/tun --network=bridge -e LICENSE_KEY='your-key' datagram"
+    echo ""
+    echo "Or use the start.sh script:"
+    echo "    ./start.sh your-key"
 else
     echo ""
     echo "[!] Build failed!"
