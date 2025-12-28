@@ -1,14 +1,22 @@
-# Testing Guide for Container Isolation Fix
+# Testing Guide for Container Isolation and Hostname Fix
 
 ## Overview
 
-This guide helps you verify that the container isolation fix works correctly and that multiple containers can run simultaneously without interference.
+This guide helps you verify that the container isolation and hostname fixes work correctly and that multiple containers can run simultaneously without interference.
 
 ## What Was Fixed
 
+### Initial Fix: Container Isolation
 **Problem**: Using `--privileged` flag caused only 1 container to show as online at a time.
 
 **Solution**: Replaced `--privileged` with specific capabilities and network isolation.
+
+### Additional Fix: Unique Hostnames
+**Problem**: Even with proper network isolation, only the last started container showed as "online" on datagram.network dashboard.
+
+**Root Cause**: Containers were using Docker's auto-generated hostnames, which didn't provide unique identifiers for the datagram.network service.
+
+**Solution**: Set explicit `--hostname` parameter to match the container name, ensuring each container has a unique identifier.
 
 ## Quick Test
 
@@ -39,6 +47,24 @@ docker ps --filter ancestor=datagram
 **Previous Behavior**: Only 1 would show as online.
 
 ## Detailed Verification
+
+### Check Container Hostname
+
+Verify each container has a unique hostname matching its container name:
+
+```bash
+# Check hostname for each container
+docker exec test1 hostname
+# Should output: test1
+
+docker exec test2 hostname
+# Should output: test2
+
+docker exec test3 hostname
+# Should output: test3
+```
+
+**Expected**: Each container reports its container name as the hostname, providing a unique identifier for datagram.network.
 
 ### Check Container Configuration
 

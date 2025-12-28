@@ -1125,6 +1125,7 @@ def start_container():
             container_kwargs = {
                 'image': image_name,
                 'name': current_container_name,
+                'hostname': current_container_name,
                 'environment': env_vars,
                 'platform': 'linux/amd64',
                 'detach': True,

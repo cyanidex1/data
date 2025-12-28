@@ -60,6 +60,7 @@ docker run \
   --cap-add=SYS_MODULE \
   --device=/dev/net/tun:/dev/net/tun \
   --network=bridge \
+  --hostname=<container-name> \
   -e LICENSE_KEY='your-key' \
   datagram
 ```
@@ -71,6 +72,7 @@ container_kwargs = {
     'cap_add': ['NET_ADMIN', 'NET_RAW', 'SYS_MODULE'],
     'devices': ['/dev/net/tun:/dev/net/tun'],
     'network_mode': 'bridge',
+    'hostname': container_name,
     # ... other parameters
 }
 ```
@@ -81,6 +83,7 @@ container_kwargs = {
 ✅ **Isolation**: Each container operates independently in its own network namespace
 ✅ **Stability**: Multiple containers can run simultaneously without conflicts
 ✅ **Predictability**: All containers show as "online" without interfering with each other
+✅ **Unique Identity**: Each container has a unique hostname for proper identification
 ✅ **Best Practices**: Follows Docker security recommendations
 
 ## Verification

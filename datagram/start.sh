@@ -43,6 +43,7 @@ docker run \
   --cap-add=SYS_MODULE \
   --device=/dev/net/tun:/dev/net/tun \
   --network=bridge \
+  --hostname="$CONTAINER_NAME" \
   --env LICENSE_KEY="$LICENSE_KEY" \
   --name "$CONTAINER_NAME" \
   --restart unless-stopped \
