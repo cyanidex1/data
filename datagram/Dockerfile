@@ -12,9 +12,10 @@ RUN curl -fsSL \
   -o /usr/local/bin/datagram && \
   chmod +x /usr/local/bin/datagram
 
-# Pre-download Conference CLI tools using test key
+# Pre-download Conference CLI tools using test key (92bcf2ae4e326968f40f8670a3596b80)
 # Note: VPN CLI requires privileged mode and will be downloaded on first run
 # This pre-downloads the Conference CLI to save time on container startup
+# The 90-second sleep allows time for the CLI download to complete before killing the process
 RUN /usr/local/bin/datagram run -- -key 92bcf2ae4e326968f40f8670a3596b80 & \
   PID=$! && \
   sleep 90 && \
