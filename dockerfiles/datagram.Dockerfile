@@ -12,6 +12,11 @@ RUN curl -fsSL \
   -o /usr/local/bin/datagram && \
   chmod +x /usr/local/bin/datagram
 
+# Copy pre-downloaded VPN and Conference CLI binaries
+# These binaries are extracted from a privileged container run by download-binaries.sh
+# Run ./download-binaries.sh before building this image to populate the binaries directory
+COPY binaries/.datagram /root/.datagram
+
 # Copy entrypoint script
 COPY datagram-entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

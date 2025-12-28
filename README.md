@@ -7,14 +7,32 @@ A web-based control panel for managing Docker containers running Datagram nodes 
 ## ⚡ Quick Start (One-Liner)
 
 ```bash
-docker build --platform linux/amd64 -t datagram datagram/ && export SECRET_KEY=$(openssl rand -hex 32) && export ADMIN_PASSWORD=$(openssl rand -base64 16) && docker compose up -d && echo "Admin password: $ADMIN_PASSWORD"
+cd datagram && ./download-binaries.sh && cd .. && docker build --platform linux/amd64 -t datagram datagram/ && export SECRET_KEY=$(openssl rand -hex 32) && export ADMIN_PASSWORD=$(openssl rand -base64 16) && docker compose up -d && echo "Admin password: $ADMIN_PASSWORD"
 ```
+
+**Note:** The first run takes ~90 seconds to download VPN and Conference CLI binaries. Subsequent builds are fast (~5 seconds).
 
 ## 🚀 Getting Started in 3 Steps
 
-### Step 1: Build the Datagram Image
+### Step 1: Download Binaries and Build the Datagram Image
+
+The datagram image requires VPN and Conference CLI binaries. Download them first:
+
 ```bash
-docker build --platform linux/amd64 -t datagram datagram/
+cd datagram
+./download-binaries.sh  # Takes ~90 seconds
+```
+
+Then build the image using either method:
+
+**Option A: Using the build script (recommended)**
+```bash
+./build.sh
+```
+
+**Option B: Using docker build directly**
+```bash
+docker build --platform linux/amd64 -t datagram .
 ```
 
 ### Step 2: Start the Control Panel

@@ -11,6 +11,7 @@ import docker
 import json
 import os
 import re
+import shutil
 import subprocess
 import threading
 import time
@@ -1971,6 +1972,73 @@ def rebuild_images():
                         'error': f'Dockerfile not found: {dockerfile_path}'
                     }
                     continue
+                
+                # For datagram, always re-download binaries on rebuild to get latest version
+                if node_type == 'datagram':
+                    binaries_dir = os.path.join(dockerfiles_dir, 'binaries', '.datagram')
+                    
+                    # Remove existing binaries to force fresh download
+                    if os.path.exists(binaries_dir):
+                        print(f"[Image Rebuild] Removing existing binaries to download latest version...")
+                        try:
+                            shutil.rmtree(os.path.join(dockerfiles_dir, 'binaries'))
+                        except Exception as e:
+                            print(f"[Image Rebuild] Warning: Failed to remove old binaries: {e}")
+                    
+                    print(f"[Image Rebuild] Downloading latest datagram binaries...")
+                    download_script = os.path.join(dockerfiles_dir, 'download-binaries.sh')
+                    if os.path.exists(download_script):
+                        try:
+                            download_result = subprocess.run(
+                                [download_script],
+                                cwd=dockerfiles_dir,
+                                capture_output=True,
+                                text=True,
+                                timeout=180  # 3 minutes for download
+                            )
+                            if download_result.returncode != 0:
+                                print(f"[Image Rebuild] Warning: Binary download failed: {download_result.stderr}")
+                                # Ensure cleanup even on failure
+                                subprocess.run(
+                                    ['docker', 'rm', '-f', 'datagram-temp'],
+                                    capture_output=True,
+                                    timeout=30
+                                )
+                                subprocess.run(
+                                    ['docker', 'rmi', '-f', 'datagram-temp:latest'],
+                                    capture_output=True,
+                                    timeout=30
+                                )
+                                results[node_type] = {
+                                    'success': False,
+                                    'error': f'Failed to download binaries: {download_result.stderr}'
+                                }
+                                continue
+                            print(f"[Image Rebuild] Binaries downloaded successfully")
+                            # Extra cleanup step to ensure no leftover resources
+                            print(f"[Image Rebuild] Verifying cleanup...")
+                            subprocess.run(
+                                ['docker', 'ps', '-a', '-q', '--filter', 'ancestor=datagram-temp:latest'],
+                                capture_output=True,
+                                timeout=10
+                            )
+                        except subprocess.TimeoutExpired:
+                            # Cleanup on timeout
+                            print(f"[Image Rebuild] Timeout - cleaning up resources...")
+                            subprocess.run(['docker', 'rm', '-f', 'datagram-temp'], capture_output=True, timeout=30)
+                            subprocess.run(['docker', 'rmi', '-f', 'datagram-temp:latest'], capture_output=True, timeout=30)
+                            results[node_type] = {
+                                'success': False,
+                                'error': 'Binary download timed out after 3 minutes'
+                            }
+                            continue
+                    else:
+                        print(f"[Image Rebuild] Warning: download-binaries.sh not found")
+                        results[node_type] = {
+                            'success': False,
+                            'error': 'download-binaries.sh not found'
+                        }
+                        continue
                 
                 # Build the image using Docker API
                 # Use docker command via subprocess for better control
