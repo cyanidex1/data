@@ -45,6 +45,23 @@ Open your browser and go to: **http://localhost:5000**
 
 That's it! You can now start managing your Datagram nodes through the web interface.
 
+## 🌐 WireGuard Interface Setup (Optional)
+
+If you need WireGuard interfaces (wg0, wg1, wg2, etc.) on the host system:
+
+```bash
+sudo ./setup-wireguard.sh
+```
+
+This creates WireGuard interfaces on the host for:
+- Direct VPN connections
+- Testing WireGuard functionality
+- Network routing and isolation
+
+For detailed configuration and management, see [WIREGUARD_SETUP.md](WIREGUARD_SETUP.md).
+
+**Note**: This is optional. Containers create their own WireGuard interfaces internally when running VPN nodes.
+
 ## Features
 
 - 🚀 **Start Containers**: Enter a 32-character key and start a new Datagram node container

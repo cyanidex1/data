@@ -42,6 +42,29 @@ Open your browser and navigate to:
 http://localhost:5000
 ```
 
+## Optional: WireGuard Interface Setup
+
+If you need WireGuard interfaces (wg0, wg1, wg2, etc.) on the host system, run:
+
+```bash
+sudo ./setup-wireguard.sh
+```
+
+This will:
+- Install WireGuard tools (if not present)
+- Create WireGuard interfaces on the host
+- Configure each interface with unique IP addresses and ports
+- Enable interfaces on system boot
+
+**When to use this:**
+- You need host-level WireGuard VPN connections
+- You want to route container traffic through WireGuard
+- You're testing WireGuard functionality directly
+
+**Note:** Containers create their own WireGuard interfaces internally, so this step is optional unless you specifically need host-level WireGuard interfaces.
+
+For detailed configuration options, see [WIREGUARD_SETUP.md](WIREGUARD_SETUP.md).
+
 ## Using the Control Panel
 
 ### Starting a New Container
