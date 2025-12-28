@@ -10,6 +10,11 @@ fi
 LICENSE_KEY="$1"
 CONTAINER_PREFIX="${2:-node}"  # Default to "node" if not provided
 
+# Container ulimit for file descriptors (default: 8192)
+# Can be overridden via CONTAINER_ULIMIT environment variable
+# 8192 is sufficient for VPN/WireGuard while allowing 500+ containers
+CONTAINER_ULIMIT="${CONTAINER_ULIMIT:-8192}"
+
 # Build image if not already built
 if ! docker image inspect datagram > /dev/null 2>&1; then
   echo "[*] Building Docker image 'datagram'..."
@@ -24,6 +29,7 @@ done
 CONTAINER_NAME="${CONTAINER_PREFIX}${INDEX}"
 
 echo "[*] Launching container '$CONTAINER_NAME' in background..."
+echo "[*] Using ulimit: $CONTAINER_ULIMIT file descriptors"
 
 docker run \
   --platform linux/amd64 \
@@ -31,6 +37,6 @@ docker run \
   --env LICENSE_KEY="$LICENSE_KEY" \
   --name "$CONTAINER_NAME" \
   --restart unless-stopped \
-  --ulimit nofile=1048576:1048576 \
+  --ulimit nofile=${CONTAINER_ULIMIT}:${CONTAINER_ULIMIT} \
   -d \
   datagram
