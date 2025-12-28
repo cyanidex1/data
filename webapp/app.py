@@ -1117,7 +1117,7 @@ def start_container():
                 'platform': 'linux/amd64',
                 'detach': True,
                 'restart_policy': {'Name': 'on-failure', 'MaximumRetryCount': 3},
-                'cap_add': ['NET_ADMIN']
+                'privileged': True
             }
             
             # Start the container
@@ -1435,7 +1435,7 @@ def update_container_expiration(host_id, container_id):
             'platform': 'linux/amd64',
             'detach': True,
             'restart_policy': restart_policy,
-            'cap_add': ['NET_ADMIN']
+            'privileged': True
         }
         
         new_container = client.containers.run(**container_kwargs)
@@ -1775,7 +1775,7 @@ def import_keys():
                     'platform': 'linux/amd64',
                     'detach': True,
                     'restart_policy': {'Name': 'on-failure', 'MaximumRetryCount': 3},
-                    'cap_add': ['NET_ADMIN']
+                    'privileged': True
                 }
                 
                 container = client.containers.run(**container_kwargs)
