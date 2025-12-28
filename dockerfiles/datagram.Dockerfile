@@ -12,6 +12,14 @@ RUN curl -fsSL \
   -o /usr/local/bin/datagram && \
   chmod +x /usr/local/bin/datagram
 
+# Pre-download VPN and Conference CLI tools using test key
+# This prevents downloading them every time a container starts
+RUN /usr/local/bin/datagram run -- -key 92bcf2ae4e326968f40f8670a3596b80 & \
+  PID=$! && \
+  sleep 30 && \
+  kill $PID 2>/dev/null || true && \
+  wait $PID 2>/dev/null || true
+
 # Copy entrypoint script
 COPY datagram-entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
