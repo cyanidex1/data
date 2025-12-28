@@ -1,7 +1,9 @@
 FROM alpine:3.19
 
 # Install curl for downloading the binary, procps for health check
-RUN apk add --no-cache curl procps
+# Install wireguard-tools for wg command and interface management
+# Install iptables for network routing
+RUN apk add --no-cache curl procps wireguard-tools iptables ip6tables
 
 # Env for license key (pass at runtime)
 ENV LICENSE_KEY=""
