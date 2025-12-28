@@ -1117,6 +1117,11 @@ def start_container():
                 current_container_name = find_unique_container_name(client, base_container_name)
             
             # Prepare container run kwargs
+            # Use specific capabilities instead of privileged mode to maintain container isolation
+            # NET_ADMIN: Create and manage network interfaces (TUN/TAP for VPN)
+            # NET_RAW: Use raw and packet sockets
+            # SYS_MODULE: Load kernel modules (for WireGuard if needed)
+            # Each container gets its own network namespace for proper isolation
             container_kwargs = {
                 'image': image_name,
                 'name': current_container_name,
@@ -1124,7 +1129,9 @@ def start_container():
                 'platform': 'linux/amd64',
                 'detach': True,
                 'restart_policy': {'Name': 'on-failure', 'MaximumRetryCount': 3},
-                'privileged': True,
+                'cap_add': ['NET_ADMIN', 'NET_RAW', 'SYS_MODULE'],
+                'devices': ['/dev/net/tun:/dev/net/tun'],
+                'network_mode': 'bridge',  # Each container gets its own network namespace
                 'ulimits': [docker.types.Ulimit(name='nofile', soft=CONTAINER_ULIMIT, hard=CONTAINER_ULIMIT)]
             }
             
@@ -1436,6 +1443,8 @@ def update_container_expiration(host_id, container_id):
         container.remove(force=True)
         
         # Create new container with updated settings
+        # Use specific capabilities instead of privileged mode to maintain container isolation
+        # Each container gets its own network namespace for proper isolation
         container_kwargs = {
             'image': image,
             'name': container_name,
@@ -1443,7 +1452,9 @@ def update_container_expiration(host_id, container_id):
             'platform': 'linux/amd64',
             'detach': True,
             'restart_policy': restart_policy,
-            'privileged': True,
+            'cap_add': ['NET_ADMIN', 'NET_RAW', 'SYS_MODULE'],
+            'devices': ['/dev/net/tun:/dev/net/tun'],
+            'network_mode': 'bridge',  # Each container gets its own network namespace
             'ulimits': [docker.types.Ulimit(name='nofile', soft=CONTAINER_ULIMIT, hard=CONTAINER_ULIMIT)]
         }
         
@@ -1777,6 +1788,8 @@ def import_keys():
             # Use 'on-failure' restart policy with max 3 retries to prevent infinite loops
             try:
                 # Prepare container run kwargs
+                # Use specific capabilities instead of privileged mode to maintain container isolation
+                # Each container gets its own network namespace for proper isolation
                 container_kwargs = {
                     'image': image_name,
                     'name': container_name,
@@ -1784,7 +1797,9 @@ def import_keys():
                     'platform': 'linux/amd64',
                     'detach': True,
                     'restart_policy': {'Name': 'on-failure', 'MaximumRetryCount': 3},
-                    'privileged': True,
+                    'cap_add': ['NET_ADMIN', 'NET_RAW', 'SYS_MODULE'],
+                    'devices': ['/dev/net/tun:/dev/net/tun'],
+                    'network_mode': 'bridge',  # Each container gets its own network namespace
                     'ulimits': [docker.types.Ulimit(name='nofile', soft=CONTAINER_ULIMIT, hard=CONTAINER_ULIMIT)]
                 }
                 
