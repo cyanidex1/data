@@ -1118,7 +1118,8 @@ def start_container():
                 'platform': 'linux/amd64',
                 'detach': True,
                 'restart_policy': {'Name': 'on-failure', 'MaximumRetryCount': 3},
-                'privileged': True
+                'privileged': True,
+                'ulimits': [{'Name': 'nofile', 'Soft': 65536, 'Hard': 65536}]
             }
             
             # Start the container
@@ -1436,7 +1437,8 @@ def update_container_expiration(host_id, container_id):
             'platform': 'linux/amd64',
             'detach': True,
             'restart_policy': restart_policy,
-            'privileged': True
+            'privileged': True,
+            'ulimits': [{'Name': 'nofile', 'Soft': 65536, 'Hard': 65536}]
         }
         
         new_container = client.containers.run(**container_kwargs)
@@ -1776,7 +1778,8 @@ def import_keys():
                     'platform': 'linux/amd64',
                     'detach': True,
                     'restart_policy': {'Name': 'on-failure', 'MaximumRetryCount': 3},
-                    'privileged': True
+                    'privileged': True,
+                    'ulimits': [{'Name': 'nofile', 'Soft': 65536, 'Hard': 65536}]
                 }
                 
                 container = client.containers.run(**container_kwargs)
