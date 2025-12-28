@@ -2,26 +2,24 @@
 
 ## Do I Need to Configure the Host?
 
-**Short Answer: Most likely NO** - Most modern Linux systems already have sufficient limits configured by default.
+**Short Answer: YES** - For datagram VPN/WireGuard nodes to work properly, you need to configure your host system limits.
 
-## Current Analysis
+## Current Requirements
 
-After checking your current environment:
+The containers require a ulimit of 1,048,576 file descriptors to properly run VPN/WireGuard operations. Your host system must support this:
 
 ```
-✓ fs.nr_open (per-process limit):    1,048,576
-✓ fs.file-max (system-wide limit):   9,223,372,036,854,775,807
+✓ fs.nr_open (per-process limit):    1,048,576 or higher
+✓ fs.file-max (system-wide limit):   Very large (e.g., 9,223,372,036,854,775,807)
 ```
 
-**Your system is already properly configured!** The container ulimit of 65,536 we're setting is well below `fs.nr_open`, which is perfect.
+## When Is Host Configuration Needed?
 
-## When Would Host Configuration Be Needed?
+You **MUST** configure the host system if:
 
-You would need to modify the host system **ONLY IF**:
-
-1. `fs.nr_open` is less than 65,536
-2. `fs.file-max` is less than 65,536
-3. You want to increase the ulimit beyond 65,536 in the future
+1. `fs.nr_open` is less than 1,048,576
+2. You see "too many open files" errors when starting containers
+3. Containers fail to bring up WireGuard devices
 
 ## How to Check Your Host Limits
 
@@ -38,23 +36,23 @@ cat /proc/sys/fs/file-max
 ulimit -n
 ```
 
-## If Configuration Is Needed (Rare)
-
-If your system shows values lower than 65,536, you would need to:
+## Configure Host Limits (Required)
 
 ### Quick One-Liner (Recommended)
 
 Run this command to configure all limits at once:
 
 ```bash
-sudo bash -c 'echo "fs.nr_open = 1048576" >> /etc/sysctl.d/99-docker-limits.conf && echo "fs.file-max = 2097152" >> /etc/sysctl.d/99-docker-limits.conf && sysctl -p /etc/sysctl.d/99-docker-limits.conf && echo -e "*    soft    nofile    1048576\n*    hard    nofile    1048576\nroot soft    nofile    1048576\nroot hard    nofile    1048576" >> /etc/security/limits.conf && systemctl restart docker'
+sudo bash -c 'echo "fs.nr_open = 1048576" > /etc/sysctl.d/99-docker-limits.conf && echo "fs.file-max = 9223372036854775807" >> /etc/sysctl.d/99-docker-limits.conf && sysctl -p /etc/sysctl.d/99-docker-limits.conf && grep -q "nofile.*1048576" /etc/security/limits.conf || echo -e "*    soft    nofile    1048576\n*    hard    nofile    1048576\nroot soft    nofile    1048576\nroot hard    nofile    1048576" >> /etc/security/limits.conf && systemctl restart docker'
 ```
 
 This command will:
 - Set `fs.nr_open` to 1,048,576 (per-process limit)
-- Set `fs.file-max` to 2,097,152 (system-wide limit)
-- Update user limits in `/etc/security/limits.conf`
+- Set `fs.file-max` to 9,223,372,036,854,775,807 (system-wide limit)
+- Update user limits in `/etc/security/limits.conf` (only if not already configured)
 - Restart Docker daemon to apply changes
+
+**Note**: The command is safe to run multiple times as it checks if limits are already configured before appending to limits.conf.
 
 ### Manual Configuration Steps
 
@@ -69,7 +67,7 @@ Edit `/etc/sysctl.conf` or create `/etc/sysctl.d/99-custom-limits.conf`:
 fs.nr_open = 1048576
 
 # Maximum number of file descriptors system-wide  
-fs.file-max = 2097152
+fs.file-max = 9223372036854775807
 ```
 
 Apply the changes:
@@ -96,10 +94,10 @@ sudo systemctl restart docker
 
 ## Why This Matters
 
-- **Container ulimit (65,536)** ≤ **Host fs.nr_open** ✓
+- **Container ulimit (1,048,576)** ≤ **Host fs.nr_open (1,048,576)** ✓
 - Docker containers inherit limits from the host
 - If container ulimit > host limit, container will fail to start
-- The fix we implemented sets the container limit to a reasonable value that allows 100+ containers to run simultaneously
+- VPN/WireGuard operations require higher file descriptor limits than typical applications
 
 ## Verification After Container Start
 
@@ -111,7 +109,7 @@ docker ps
 
 # Check the container's ulimit
 docker exec <container_id> sh -c "ulimit -n"
-# Should show: 65536
+# Should show: 1048576
 
 # Or check from the host
 docker inspect <container_id> | grep -A 5 Ulimits
@@ -119,19 +117,18 @@ docker inspect <container_id> | grep -A 5 Ulimits
 
 ## Summary
 
-✅ **No host configuration needed** - Your system limits are already sufficient  
-✅ **Container ulimit: 65,536** - Optimized for running 100+ containers simultaneously  
-✅ **Ready to use** - Just rebuild/restart containers with the updated code
+⚠️ **Host configuration IS needed** - Configure your system limits before starting containers  
+✅ **Container ulimit: 1,048,576** - Required for VPN/WireGuard operations  
+✅ **One-liner available** - Use the quick one-liner command above to configure everything at once
 
-The changes we made to `datagram/start.sh` and `webapp/app.py` are sufficient to fix the "too many open files" error when running many containers.
+The changes to `datagram/start.sh` and `webapp/app.py` set the container ulimit to 1,048,576, which requires matching host system configuration.
 
-## Why 65,536 Instead of 1,048,576?
+## Why 1,048,576?
 
-The previous limit of 1,048,576 was excessive and caused problems when running many containers:
-- **With old limit**: 60 containers × 1,048,576 = ~63 million file descriptors (exhausts system resources)
-- **With new limit**: 100+ containers × 65,536 = ~6.5 million file descriptors (manageable)
+VPN/WireGuard operations require higher file descriptor limits:
+- **Tunnel interfaces (TUN/TAP devices)** - Each VPN connection needs multiple file descriptors
+- **Network connections** - Multiple concurrent connections for VPN traffic
+- **WireGuard peer connections** - Each peer maintains file descriptors
+- **Log files and other I/O operations**
 
-For VPN-based datagram nodes, 65,536 file descriptors is more than sufficient for:
-- Tunnel interfaces (TUN/TAP devices)
-- Network connections
-- Log files and other I/O operations
+The ulimit of 1,048,576 provides sufficient headroom for these operations while still allowing multiple containers to run on a single host.

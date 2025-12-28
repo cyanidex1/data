@@ -31,8 +31,6 @@ docker run \
   --env LICENSE_KEY="$LICENSE_KEY" \
   --name "$CONTAINER_NAME" \
   --restart unless-stopped \
-  --memory="100m" \
-  --memory-swap="200m" \
-  --ulimit nofile=65536:65536 \
+  --ulimit nofile=1048576:1048576 \
   -d \
   datagram
