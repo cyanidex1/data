@@ -16,27 +16,30 @@ declare -A NODE_IMAGES=(
     ["win"]="win-node"
 )
 
-# Start Tailscale daemon in the background
-start_tailscaled() {
-    echo "[*] Starting Tailscale daemon..."
-    # Ensure state directory exists
-    mkdir -p /var/lib/tailscale /var/run/tailscale
+# Download binaries for datagram if not already present
+download_datagram_binaries() {
+    local binaries_dir="$DOCKERFILES_DIR/binaries"
     
-    # Start tailscaled in userspace networking mode (works without TUN device)
-    tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/var/run/tailscale/tailscaled.sock --tun=userspace-networking &
+    if [ -d "$binaries_dir/.datagram" ]; then
+        echo "[*] Datagram binaries already exist, skipping download..."
+        return 0
+    fi
     
-    # Wait for tailscaled to be ready (up to 10 seconds)
-    local max_attempts=10
-    local attempt=0
-    while [ $attempt -lt $max_attempts ]; do
-        if tailscale --socket=/var/run/tailscale/tailscaled.sock status &>/dev/null; then
-            echo "[*] Tailscale daemon is ready"
-            return 0
-        fi
-        attempt=$((attempt + 1))
-        sleep 1
-    done
-    echo "[!] Warning: Tailscale daemon may not be fully ready, continuing anyway..."
+    echo "[*] Downloading datagram binaries (VPN and Conference CLI)..."
+    
+    if [ -x "$DOCKERFILES_DIR/download-binaries.sh" ]; then
+        cd "$DOCKERFILES_DIR"
+        ./download-binaries.sh || {
+            echo "[!] Warning: Failed to download datagram binaries"
+            return 1
+        }
+        cd - > /dev/null
+    else
+        echo "[!] Warning: download-binaries.sh not found or not executable"
+        return 1
+    fi
+    
+    return 0
 }
 
 # Build a single Docker image
@@ -54,6 +57,13 @@ build_image() {
     if docker image inspect "$image_name" > /dev/null 2>&1; then
         echo "[*] Image $image_name already exists, skipping..."
         return 0
+    fi
+    
+    # For datagram, ensure binaries are downloaded first
+    if [ "$node_type" = "datagram" ]; then
+        download_datagram_binaries || {
+            echo "[!] Warning: Failed to download datagram binaries, build may fail"
+        }
     fi
     
     echo "[*] Building image: $image_name from $dockerfile"
@@ -76,9 +86,6 @@ build_all_images() {
     touch "$IMAGES_BUILT_FLAG"
     echo "[*] All images processed!"
 }
-
-# Start Tailscale daemon
-start_tailscaled
 
 # Main startup logic
 if [ ! -f "$IMAGES_BUILT_FLAG" ]; then

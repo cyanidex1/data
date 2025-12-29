@@ -3,21 +3,16 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install Docker CLI for building images using the official Docker repository
-# Install Tailscale for VPN connectivity
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     gnupg \
-    iptables \
-    iproute2 \
     && install -m 0755 -d /etc/apt/keyrings \
     && curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
     && chmod a+r /etc/apt/keyrings/docker.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null \
-    && curl -fsSL https://pkgs.tailscale.com/stable/debian/bookworm.noarmor.gpg | tee /usr/share/keyrings/tailscale-archive-keyring.gpg > /dev/null \
-    && curl -fsSL https://pkgs.tailscale.com/stable/debian/bookworm.tailscale-keyring.list | tee /etc/apt/sources.list.d/tailscale.list \
     && apt-get update \
-    && apt-get install -y --no-install-recommends docker-ce-cli tailscale \
+    && apt-get install -y --no-install-recommends docker-ce-cli \
     && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies
@@ -42,9 +37,6 @@ RUN chmod +x /app/startup.sh
 # Add user to docker group for socket access (GID will be mapped from host)
 # This allows the container to communicate with Docker daemon
 RUN groupadd -g 999 docker || true
-
-# Create directory for Tailscale state
-RUN mkdir -p /var/run/tailscale /var/lib/tailscale
 
 # Expose port
 EXPOSE 5000

@@ -11,25 +11,20 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       # Persistent storage for host configuration
       - ./data:/data
-      # Persistent storage for Tailscale state
-      - tailscale-state:/var/lib/tailscale
     environment:
       - SECRET_KEY=${SECRET_KEY:-change-this-to-a-random-secret-key}
       - DEBUG=${DEBUG:-False}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+      # Container ulimit for file descriptors (default: 8192)
+      # Set to support running 500+ containers on a single host
+      # Increase if containers need more file descriptors
+      - CONTAINER_ULIMIT=${CONTAINER_ULIMIT:-8192}
     restart: unless-stopped
     # Run as root to access Docker socket
     user: root
-    # Required for Tailscale userspace networking
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
     networks:
       - datagram-network
-
-volumes:
-  tailscale-state:
 
 networks:
   datagram-network:

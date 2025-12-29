@@ -1,7 +1,9 @@
 FROM alpine:3.19
 
-# Install curl for downloading the binary and procps for health check
-RUN apk add --no-cache curl procps
+# Install curl for downloading the binary, procps for health check
+# Install wireguard-tools for wg command and interface management
+# Install iptables for network routing
+RUN apk add --no-cache curl procps wireguard-tools iptables ip6tables
 
 # Env for license key (pass at runtime)
 ENV LICENSE_KEY=""
@@ -12,15 +14,16 @@ RUN curl -fsSL \
   -o /usr/local/bin/datagram && \
   chmod +x /usr/local/bin/datagram
 
+# Copy pre-downloaded VPN and Conference CLI binaries
+# These binaries are extracted from a privileged container run by download-binaries.sh
+# Run ./download-binaries.sh before building this image to populate the binaries directory
+COPY binaries/.datagram /root/.datagram
+
 # Copy entrypoint script
 COPY datagram-entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Create non-root user
-RUN adduser -D datagram
-USER datagram
-
-WORKDIR /home/datagram
+WORKDIR /root
 
 # Health check - verify datagram conference process is running
 HEALTHCHECK --interval=10s --timeout=5s --retries=3 \

@@ -366,6 +366,21 @@
             </div>
         </div>
 
+        <!-- Image Management -->
+        <div class="card">
+            <div class="card-header">
+                <span>🔄</span> Image Management
+                <button onclick="showRebuildImagesModal()" class="btn btn-primary btn-sm">🔨 Rebuild Images</button>
+            </div>
+            <div class="card-body">
+                <p style="margin-bottom: 12px;">Rebuild all node type Docker images from scratch. This is useful when datagram gets frequent updates.</p>
+                <div class="alert" style="background: var(--card-bg-color); border-color: var(--border-color); color: var(--text-muted-color); margin-bottom: 0;">
+                    <strong>Note:</strong> Images are rebuilt using <code>--no-cache</code> flag to ensure fresh builds. 
+                    Optionally, you can restart running containers to apply the new images.
+                </div>
+            </div>
+        </div>
+
         <!-- Docker Hosts -->
         <div class="card">
             <div class="card-header">
@@ -396,60 +411,8 @@
             </div>
         </div>
 
-        <!-- Tailscale VPN -->
-        <div class="card">
-            <div class="card-header">
-                🔗 Tailscale VPN
-                <button onclick="refreshTailscaleStatus()" class="btn btn-secondary btn-sm">↻ Refresh</button>
-            </div>
-            <div class="card-body">
-                <div id="tailscale-status-loading" style="text-align: center; padding: 16px; color: #8b949e;">
-                    Loading Tailscale status...
-                </div>
-                <div id="tailscale-status-content" style="display: none;">
-                    <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
-                        <div>
-                            <h4 style="font-size: 14px; color: var(--text-muted-color); margin-bottom: 12px;">Connection Status</h4>
-                            <p style="margin-bottom: 8px;">
-                                <strong>Status:</strong> 
-                                <span id="ts-status-badge" class="badge"></span>
-                            </p>
-                            <p style="margin-bottom: 8px;"><strong>Backend State:</strong> <span id="ts-backend-state">-</span></p>
-                            <p style="margin-bottom: 8px;"><strong>Tailscale IP:</strong> <code id="ts-ip">-</code></p>
-                            <p style="margin-bottom: 8px;"><strong>Hostname:</strong> <span id="ts-hostname">-</span></p>
-                            <p style="margin-bottom: 8px;"><strong>DNS Name:</strong> <code id="ts-dns-name">-</code></p>
-                            <p style="margin-bottom: 8px;"><strong>Peers Connected:</strong> <span id="ts-peers">-</span></p>
-                        </div>
-                        <div>
-                            <h4 style="font-size: 14px; color: var(--text-muted-color); margin-bottom: 12px;">Connect to Tailscale</h4>
-                            <div id="tailscale-connect-form">
-                                <div class="form-group">
-                                    <label for="ts-auth-key">Auth Key</label>
-                                    <input type="password" id="ts-auth-key" placeholder="tskey-auth-xxxxx..." style="font-family: monospace;">
-                                    <div class="help-text">Get your auth key from <a href="https://login.tailscale.com/admin/settings/keys" target="_blank" style="color: var(--primary-color);">Tailscale Admin Console</a>. The key will be saved for auto-reconnection on restart.</div>
-                                </div>
-                                <div class="form-group">
-                                    <label for="ts-hostname">Custom Hostname (optional)</label>
-                                    <input type="text" id="ts-hostname-input" placeholder="datagram-control-panel">
-                                    <div class="help-text">Leave empty to use the default hostname</div>
-                                </div>
-                                <div class="btn-group" style="display: flex; gap: 8px; margin-top: 16px;">
-                                    <button onclick="connectTailscale()" class="btn btn-primary" id="ts-connect-btn">
-                                        🔗 Connect
-                                    </button>
-                                    <button onclick="disconnectTailscale()" class="btn btn-secondary" id="ts-disconnect-btn" style="display: none;">
-                                        ⏹ Disconnect
-                                    </button>
-                                    <button onclick="logoutTailscale()" class="btn btn-danger" id="ts-logout-btn" style="display: none;">
-                                        🚪 Logout
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+
+
     </div>
 
     <!-- Add User Modal -->
@@ -632,6 +595,48 @@
         </div>
     </div>
 
+    <!-- Rebuild Images Modal -->
+    <div id="rebuild-images-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">🔨 Rebuild Container Images</div>
+            <form id="rebuild-images-form">
+                <div class="modal-body">
+                    <p style="margin-bottom: 16px; color: var(--text-muted-color);">
+                        This will rebuild all node type images from scratch using <code>--no-cache</code>. 
+                        Useful for applying updates from the datagram CLI or other node software.
+                    </p>
+                    <div class="form-group">
+                        <label for="rebuild-host-id">Docker Host</label>
+                        <select id="rebuild-host-id" required>
+                            {% for host in hosts %}
+                            <option value="{{ host.id }}">{{ host.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="rebuild-restart-containers" style="width: auto; margin-right: 8px;">
+                            Restart running containers after rebuild
+                        </label>
+                        <div class="help-text">
+                            If checked, all running containers will be restarted to use the newly built images.
+                        </div>
+                    </div>
+                    <div id="rebuild-progress" style="display: none;">
+                        <div class="alert" style="background: var(--card-bg-color); border-color: var(--border-color); color: var(--text-color); margin-bottom: 0;">
+                            <strong>⏳ Rebuilding...</strong><br>
+                            <span id="rebuild-status">Starting rebuild process...</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" onclick="closeRebuildImagesModal()" class="btn btn-secondary">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="rebuild-submit-btn">🔨 Rebuild All Images</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('add-user-form').addEventListener('submit', function(e) {
@@ -654,8 +659,33 @@
                 updateHost();
             });
             
-            // Load Tailscale status on page load
-            refreshTailscaleStatus();
+            document.getElementById('rebuild-images-form').addEventListener('submit', function(e) {
+                e.preventDefault();
+                rebuildImages();
+            });
+            
+            // Add listener for remove memory limit checkbox to update UI
+            const removeMemLimitCheckbox = document.getElementById('remove-memory-limit');
+            if (removeMemLimitCheckbox) {
+                removeMemLimitCheckbox.addEventListener('change', function() {
+                    const memLimitInput = document.getElementById('default-mem-limit');
+                    const memswapLimitInput = document.getElementById('default-memswap-limit');
+                    
+                    if (this.checked) {
+                        // Disable memory limit inputs when remove is checked
+                        memLimitInput.disabled = true;
+                        memswapLimitInput.disabled = true;
+                        memLimitInput.style.opacity = '0.5';
+                        memswapLimitInput.style.opacity = '0.5';
+                    } else {
+                        // Enable memory limit inputs when remove is unchecked
+                        memLimitInput.disabled = false;
+                        memswapLimitInput.disabled = false;
+                        memLimitInput.style.opacity = '1';
+                        memswapLimitInput.style.opacity = '1';
+                    }
+                });
+            }
         });
         
         function showAlert(message, type) {
@@ -913,171 +943,84 @@
             if (event.target === statsModal) closeStatsModal();
             if (event.target === editUserModal) closeEditUserModal();
             if (event.target === editHostModal) closeEditHostModal();
+            
+            const rebuildModal = document.getElementById('rebuild-images-modal');
+            if (event.target === rebuildModal) closeRebuildImagesModal();
         }
         
-        // Tailscale Functions
-        async function refreshTailscaleStatus() {
-            const loading = document.getElementById('tailscale-status-loading');
-            const content = document.getElementById('tailscale-status-content');
-            
-            loading.style.display = 'block';
-            content.style.display = 'none';
-            
-            try {
-                const response = await fetch('/api/tailscale/status');
-                const data = await response.json();
-                
-                if (response.ok) {
-                    const status = data.status;
-                    
-                    // Update status badge
-                    const badge = document.getElementById('ts-status-badge');
-                    if (status.connected) {
-                        badge.textContent = 'Connected';
-                        badge.className = 'badge badge-admin';
-                        badge.style.background = '#1f2d1f';
-                        badge.style.color = '#3fb950';
-                    } else if (status.backend_state === 'NeedsLogin') {
-                        badge.textContent = 'Not Connected';
-                        badge.className = 'badge';
-                        badge.style.background = '#2d1b1e';
-                        badge.style.color = '#f85149';
-                    } else {
-                        badge.textContent = status.backend_state || 'Unknown';
-                        badge.className = 'badge';
-                        badge.style.background = '#3d2e00';
-                        badge.style.color = '#f0b72f';
-                    }
-                    
-                    // Update other fields
-                    document.getElementById('ts-backend-state').textContent = status.backend_state || '-';
-                    document.getElementById('ts-ip').textContent = status.tailscale_ip || '-';
-                    document.getElementById('ts-hostname').textContent = status.hostname || '-';
-                    document.getElementById('ts-dns-name').textContent = status.dns_name || '-';
-                    document.getElementById('ts-peers').textContent = status.peers !== undefined ? status.peers : '-';
-                    
-                    // Show/hide buttons based on connection status
-                    const connectBtn = document.getElementById('ts-connect-btn');
-                    const disconnectBtn = document.getElementById('ts-disconnect-btn');
-                    const logoutBtn = document.getElementById('ts-logout-btn');
-                    
-                    if (status.connected) {
-                        connectBtn.style.display = 'none';
-                        disconnectBtn.style.display = 'inline-block';
-                        logoutBtn.style.display = 'inline-block';
-                    } else {
-                        connectBtn.style.display = 'inline-block';
-                        disconnectBtn.style.display = 'none';
-                        logoutBtn.style.display = status.backend_state !== 'NeedsLogin' ? 'inline-block' : 'none';
-                    }
-                    
-                    loading.style.display = 'none';
-                    content.style.display = 'block';
-                } else {
-                    loading.innerHTML = '<div style="color: #f85149;">Error: ' + (data.error || 'Failed to get status') + '</div>';
-                }
-            } catch (error) {
-                loading.innerHTML = '<div style="color: #f85149;">Error loading Tailscale status: ' + error.message + '</div>';
-            }
+        // Rebuild Images functions
+        function showRebuildImagesModal() {
+            document.getElementById('rebuild-images-modal').style.display = 'flex';
+            document.getElementById('rebuild-progress').style.display = 'none';
         }
         
-        async function connectTailscale() {
-            const authKey = document.getElementById('ts-auth-key').value.trim();
-            const hostname = document.getElementById('ts-hostname-input').value.trim();
+        function closeRebuildImagesModal() {
+            document.getElementById('rebuild-images-modal').style.display = 'none';
+            document.getElementById('rebuild-images-form').reset();
+            document.getElementById('rebuild-progress').style.display = 'none';
+        }
+        
+        async function rebuildImages() {
+            const hostId = document.getElementById('rebuild-host-id').value;
+            const restartContainers = document.getElementById('rebuild-restart-containers').checked;
+            const submitBtn = document.getElementById('rebuild-submit-btn');
+            const progressDiv = document.getElementById('rebuild-progress');
+            const statusSpan = document.getElementById('rebuild-status');
             
-            if (!authKey) {
-                showAlert('Please enter a Tailscale auth key', 'error');
-                return;
-            }
-            
-            if (!authKey.startsWith('tskey-')) {
-                showAlert('Invalid auth key format. Should start with "tskey-"', 'error');
-                return;
-            }
-            
-            const connectBtn = document.getElementById('ts-connect-btn');
-            connectBtn.disabled = true;
-            connectBtn.textContent = '⏳ Connecting...';
+            // Show progress
+            progressDiv.style.display = 'block';
+            submitBtn.disabled = true;
+            statusSpan.textContent = 'Starting rebuild process...';
             
             try {
-                const response = await fetch('/api/tailscale/connect', {
+                const response = await fetch('/api/admin/rebuild-images', {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ auth_key: authKey, hostname: hostname || null })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        host_id: parseInt(hostId),
+                        restart_containers: restartContainers
+                    })
                 });
                 
                 const data = await response.json();
                 
-                if (response.ok) {
-                    showAlert('Successfully connected to Tailscale network!', 'success');
-                    document.getElementById('ts-auth-key').value = '';
-                    await refreshTailscaleStatus();
+                if (response.ok && data.success) {
+                    let message = 'Images rebuilt successfully!\n\n';
+                    
+                    // Show results for each node type
+                    for (const [nodeType, result] of Object.entries(data.results)) {
+                        if (result.success) {
+                            message += `✓ ${nodeType}: ${result.message}\n`;
+                        } else {
+                            message += `✗ ${nodeType}: ${result.error}\n`;
+                        }
+                    }
+                    
+                    // Show restarted containers if any
+                    if (data.restarted_containers && data.restarted_containers.length > 0) {
+                        message += `\nRestarted ${data.restarted_containers.length} container(s):\n`;
+                        data.restarted_containers.forEach(c => {
+                            message += `  - ${c.name} (${c.node_type})\n`;
+                        });
+                    }
+                    
+                    showAlert(message, 'success');
+                    closeRebuildImagesModal();
+                    
+                    // Reload page after 2 seconds to show updated information
+                    setTimeout(() => location.reload(), 2000);
                 } else {
-                    showAlert('Error: ' + data.error, 'error');
+                    showAlert(data.error || 'Failed to rebuild images', 'error');
+                    submitBtn.disabled = false;
+                    progressDiv.style.display = 'none';
                 }
             } catch (error) {
-                showAlert('Error connecting to Tailscale: ' + error.message, 'error');
-            } finally {
-                connectBtn.disabled = false;
-                connectBtn.textContent = '🔗 Connect';
+                showAlert('Error: ' + error.message, 'error');
+                submitBtn.disabled = false;
+                progressDiv.style.display = 'none';
             }
         }
         
-        async function disconnectTailscale() {
-            if (!confirm('Disconnect from Tailscale network? You can reconnect later.')) return;
-            
-            const disconnectBtn = document.getElementById('ts-disconnect-btn');
-            disconnectBtn.disabled = true;
-            disconnectBtn.textContent = '⏳ Disconnecting...';
-            
-            try {
-                const response = await fetch('/api/tailscale/disconnect', {
-                    method: 'POST'
-                });
-                
-                const data = await response.json();
-                
-                if (response.ok) {
-                    showAlert('Successfully disconnected from Tailscale', 'success');
-                    await refreshTailscaleStatus();
-                } else {
-                    showAlert('Error: ' + data.error, 'error');
-                }
-            } catch (error) {
-                showAlert('Error disconnecting from Tailscale: ' + error.message, 'error');
-            } finally {
-                disconnectBtn.disabled = false;
-                disconnectBtn.textContent = '⏹ Disconnect';
-            }
-        }
-        
-        async function logoutTailscale() {
-            if (!confirm('Logout from Tailscale? This will remove this device from your Tailscale account. You will need to re-authenticate with a new auth key.')) return;
-            
-            const logoutBtn = document.getElementById('ts-logout-btn');
-            logoutBtn.disabled = true;
-            logoutBtn.textContent = '⏳ Logging out...';
-            
-            try {
-                const response = await fetch('/api/tailscale/logout', {
-                    method: 'POST'
-                });
-                
-                const data = await response.json();
-                
-                if (response.ok) {
-                    showAlert('Successfully logged out from Tailscale', 'success');
-                    await refreshTailscaleStatus();
-                } else {
-                    showAlert('Error: ' + data.error, 'error');
-                }
-            } catch (error) {
-                showAlert('Error logging out from Tailscale: ' + error.message, 'error');
-            } finally {
-                logoutBtn.disabled = false;
-                logoutBtn.textContent = '🚪 Logout';
-            }
-        }
         
         function applyTheme(theme) {
             const themes = {
@@ -1121,6 +1064,8 @@
             const storedTheme = localStorage.getItem('theme') || 'dark';
             applyTheme(storedTheme);
         })();
+        
+
     </script>
 </body>
 </html>

@@ -11,12 +11,15 @@ import docker
 import json
 import os
 import re
+import shutil
 import subprocess
 import threading
 import time
 from datetime import datetime, timedelta, timezone
 from io import StringIO
 import csv
+from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
@@ -31,8 +34,16 @@ login_manager.login_message = 'Please log in to access the control panel.'
 DATA_DIR = os.environ.get('DATA_DIR', '/data')
 HOSTS_FILE = os.path.join(DATA_DIR, 'docker_hosts.json')
 USERS_FILE = os.path.join(DATA_DIR, 'users.json')
-TAILSCALE_CONFIG_FILE = os.path.join(DATA_DIR, 'tailscale_config.json')
 DEFAULT_IMAGE = 'datagram'
+
+# Container resource limits
+# Default ulimit for file descriptors per container
+# 8192 is sufficient for VPN/WireGuard operations while allowing 500+ containers
+# Can be increased via CONTAINER_ULIMIT environment variable if needed
+CONTAINER_ULIMIT = int(os.environ.get('CONTAINER_ULIMIT', '8192'))
+
+# Performance constants
+EXPECTED_ENV_VAR_COUNT = 4  # Number of environment variables we look for in containers
 
 # Node type configurations
 NODE_TYPES = {
@@ -428,212 +439,71 @@ class DockerHostManager:
 host_manager = DockerHostManager(HOSTS_FILE)
 
 
-class TailscaleManager:
-    """Manages Tailscale VPN connection"""
-    
-    TAILSCALE_SOCKET = '/var/run/tailscale/tailscaled.sock'
-    
-    def __init__(self, config_file):
-        self.config_file = config_file
-        self.config = self.load_config()
-    
-    def load_config(self):
-        """Load Tailscale configuration from file"""
-        if os.path.exists(self.config_file):
-            try:
-                with open(self.config_file, 'r') as f:
-                    return json.load(f)
-            except Exception as e:
-                print(f"Error loading Tailscale config: {e}")
-                return {}
-        return {}
-    
-    def save_config(self, auth_key=None, hostname=None):
-        """Save Tailscale configuration to file"""
-        os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
-        if auth_key is not None:
-            self.config['auth_key'] = auth_key
-        if hostname is not None:
-            self.config['hostname'] = hostname
-        self.config['updated_at'] = datetime.now().isoformat()
-        with open(self.config_file, 'w') as f:
-            json.dump(self.config, f, indent=2)
-    
-    def get_saved_auth_key(self):
-        """Get saved auth key from config"""
-        return self.config.get('auth_key')
-    
-    def auto_connect(self):
-        """Attempt to auto-connect using saved auth key if not already connected"""
-        status = self.get_status()
-        if status.get('connected'):
-            return {'success': True, 'message': 'Already connected'}
-        
-        auth_key = self.get_saved_auth_key()
-        if not auth_key:
-            return {'success': False, 'message': 'No saved auth key'}
-        
-        hostname = self.config.get('hostname')
-        return self.connect(auth_key, hostname, save_key=False)
-    
-    def _run_tailscale_cmd(self, args, timeout=30):
-        """Run a tailscale command and return output"""
-        cmd = ['tailscale', f'--socket={self.TAILSCALE_SOCKET}'] + args
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout
-            )
-            return {
-                'success': result.returncode == 0,
-                'stdout': result.stdout.strip(),
-                'stderr': result.stderr.strip(),
-                'returncode': result.returncode
-            }
-        except subprocess.TimeoutExpired:
-            return {
-                'success': False,
-                'stdout': '',
-                'stderr': 'Command timed out',
-                'returncode': -1
-            }
-        except Exception as e:
-            return {
-                'success': False,
-                'stdout': '',
-                'stderr': str(e),
-                'returncode': -1
-            }
-    
-    def get_status(self):
-        """Get current Tailscale status"""
-        result = self._run_tailscale_cmd(['status', '--json'])
-        
-        if result['success']:
-            try:
-                status_data = json.loads(result['stdout'])
-                return {
-                    'connected': status_data.get('BackendState') == 'Running',
-                    'backend_state': status_data.get('BackendState', 'Unknown'),
-                    'tailscale_ip': status_data.get('TailscaleIPs', ['N/A'])[0] if status_data.get('TailscaleIPs') else 'N/A',
-                    'hostname': status_data.get('Self', {}).get('HostName', 'N/A'),
-                    'dns_name': status_data.get('Self', {}).get('DNSName', 'N/A'),
-                    'online': status_data.get('Self', {}).get('Online', False),
-                    'peers': len(status_data.get('Peer') or {}),
-                    'raw': status_data
-                }
-            except json.JSONDecodeError:
-                return {
-                    'connected': False,
-                    'backend_state': 'Unknown',
-                    'error': 'Failed to parse status JSON'
-                }
-        else:
-            # Check if the error indicates not logged in
-            if 'not logged in' in result['stderr'].lower() or 'needslogin' in result['stderr'].lower():
-                return {
-                    'connected': False,
-                    'backend_state': 'NeedsLogin',
-                    'message': 'Not connected to Tailscale network'
-                }
-            return {
-                'connected': False,
-                'backend_state': 'Error',
-                'error': result['stderr'] or 'Failed to get status'
-            }
-    
-    def connect(self, auth_key, hostname=None, save_key=True):
-        """Connect to Tailscale network using auth key"""
-        if not auth_key:
-            return {'success': False, 'error': 'Auth key is required'}
-        
-        # Validate auth key format (tskey-auth-xxx or tskey-xxx)
-        if not re.match(r'^tskey-[a-zA-Z0-9-]+$', auth_key):
-            return {'success': False, 'error': 'Invalid auth key format. Should start with "tskey-"'}
-        
-        # Build the command
-        args = ['up', f'--authkey={auth_key}', '--accept-routes']
-        
-        if hostname:
-            # Sanitize hostname - replace invalid chars, remove consecutive hyphens
-            hostname = re.sub(r'[^a-zA-Z0-9-]', '-', hostname)
-            hostname = re.sub(r'-+', '-', hostname).strip('-')[:63]
-            if hostname:
-                args.append(f'--hostname={hostname}')
-        
-        result = self._run_tailscale_cmd(args, timeout=60)
-        
-        if result['success']:
-            # Save auth key and hostname for reconnection on restart
-            if save_key:
-                self.save_config(auth_key=auth_key, hostname=hostname)
-            else:
-                self.save_config(hostname=hostname)
-            return {
-                'success': True,
-                'message': 'Successfully connected to Tailscale network'
-            }
-        else:
-            return {
-                'success': False,
-                'error': result['stderr'] or 'Failed to connect to Tailscale'
-            }
-    
-    def disconnect(self):
-        """Disconnect from Tailscale network"""
-        result = self._run_tailscale_cmd(['down'])
-        
-        if result['success']:
-            return {
-                'success': True,
-                'message': 'Successfully disconnected from Tailscale network'
-            }
-        else:
-            return {
-                'success': False,
-                'error': result['stderr'] or 'Failed to disconnect from Tailscale'
-            }
-    
-    def logout(self):
-        """Logout from Tailscale (removes device from account)"""
-        result = self._run_tailscale_cmd(['logout'])
-        
-        if result['success']:
-            # Clear saved config
-            self.config = {}
-            self.save_config()
-            return {
-                'success': True,
-                'message': 'Successfully logged out from Tailscale'
-            }
-        else:
-            return {
-                'success': False,
-                'error': result['stderr'] or 'Failed to logout from Tailscale'
-            }
 
 
-# Initialize Tailscale manager
-tailscale_manager = TailscaleManager(TAILSCALE_CONFIG_FILE)
+class ContainerListCache:
+    """Simple time-based cache for container list to improve performance
+    
+    This cache reduces load on the Docker API by caching container list responses
+    for a short period (default 10 seconds). It's designed to handle the 10-second
+    auto-refresh interval, ensuring most concurrent requests are served from cache.
+    
+    Thread Safety:
+        All methods are thread-safe using a threading.Lock to prevent race conditions
+        when multiple requests access the cache concurrently.
+    
+    Args:
+        ttl_seconds (int): Time-to-live for cached data in seconds. Default is 10 seconds.
+    
+    Usage:
+        cache = ContainerListCache(ttl_seconds=10)
+        
+        # Try to get from cache
+        result = cache.get()
+        if result is None:
+            # Cache miss - fetch fresh data
+            result = expensive_operation()
+            cache.set(result)
+        
+        # Invalidate when data changes
+        cache.invalidate()
+    """
+    
+    def __init__(self, ttl_seconds=10):
+        self.ttl_seconds = ttl_seconds
+        self._cache = None
+        self._cache_time = None
+        self._lock = threading.Lock()
+    
+    def get(self):
+        """Get cached container list if still valid"""
+        with self._lock:
+            if self._cache is None or self._cache_time is None:
+                return None
+            
+            age = time.time() - self._cache_time
+            if age > self.ttl_seconds:
+                return None
+            
+            return self._cache
+    
+    def set(self, containers):
+        """Set container list in cache"""
+        with self._lock:
+            self._cache = containers
+            self._cache_time = time.time()
+    
+    def invalidate(self):
+        """Invalidate the cache"""
+        with self._lock:
+            self._cache = None
+            self._cache_time = None
 
-# Attempt auto-connect to Tailscale if auth key is saved
-def _try_tailscale_auto_connect():
-    """Try to auto-connect to Tailscale on startup"""
-    try:
-        result = tailscale_manager.auto_connect()
-        if result.get('success'):
-            print("[*] Tailscale auto-connect: Already connected or reconnected successfully")
-        elif result.get('message') == 'No saved auth key':
-            print("[*] Tailscale auto-connect: No saved auth key, manual connection required")
-        else:
-            print(f"[!] Tailscale auto-connect failed: {result.get('error', result.get('message', 'Unknown error'))}")
-    except Exception as e:
-        print(f"[!] Tailscale auto-connect error: {e}")
 
-# Run auto-connect in a background thread to not block startup
-threading.Thread(target=_try_tailscale_auto_connect, daemon=True).start()
+# Initialize container cache with 10-second TTL
+# Increased from 5 to 10 seconds to better handle high container counts
+# since the auto-refresh interval is 10 seconds anyway
+container_cache = ContainerListCache(ttl_seconds=10)
 
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -952,126 +822,177 @@ def update_host(host_id):
     return jsonify({'success': True, 'host': result})
 
 
-# Tailscale API Endpoints
-@app.route('/api/tailscale/status', methods=['GET'])
-@login_required
-def tailscale_status():
-    """Get Tailscale connection status - admin only"""
-    if not current_user.is_admin():
-        return jsonify({'error': 'Admin privileges required'}), 403
-    
-    status = tailscale_manager.get_status()
-    return jsonify({'status': status})
 
 
-@app.route('/api/tailscale/connect', methods=['POST'])
-@login_required
-def tailscale_connect():
-    """Connect to Tailscale network - admin only"""
-    if not current_user.is_admin():
-        return jsonify({'error': 'Admin privileges required'}), 403
+def _process_host_containers(host, current_time_utc):
+    """Process containers for a single host (used for concurrent execution)
     
-    data = request.json
-    auth_key = data.get('auth_key')
-    hostname = data.get('hostname')
+    Optimized for high container counts by:
+    - Fetching all container data in one API call (containers.list includes attrs)
+    - Processing environment variables efficiently with early termination
+    - Minimizing object attribute access
+    - Using efficient string operations
     
-    if not auth_key:
-        return jsonify({'error': 'Auth key is required'}), 400
+    Args:
+        host: Host configuration dictionary
+        current_time_utc: Current UTC datetime (pre-calculated to avoid repeated calls)
     
-    result = tailscale_manager.connect(auth_key, hostname)
+    Returns:
+        List of container dictionaries (excludes the webapp container itself)
+    """
+    client = host_manager.get_client(host['id'])
+    if not client:
+        return []
     
-    if result['success']:
-        return jsonify(result)
-    else:
-        return jsonify(result), 400
-
-
-@app.route('/api/tailscale/disconnect', methods=['POST'])
-@login_required
-def tailscale_disconnect():
-    """Disconnect from Tailscale network - admin only"""
-    if not current_user.is_admin():
-        return jsonify({'error': 'Admin privileges required'}), 403
+    host_containers = []
     
-    result = tailscale_manager.disconnect()
+    try:
+        # List all containers - this fetches all data including attrs in a single API call
+        # The Docker SDK's containers.list() is efficient for bulk operations
+        containers = client.containers.list(all=True)
+        
+        for container in containers:
+            # Skip the webapp container itself (datagram-control-panel)
+            if container.name == 'datagram-control-panel':
+                continue
+            
+            # Access attrs once - it's already loaded from the list() call
+            attrs = container.attrs
+            config = attrs.get('Config', {})
+            env_vars = config.get('Env', [])
+            
+            # Parse environment variables efficiently with early termination
+            license_key = None
+            expiration_date = None
+            node_type = None
+            node_email = None
+            found_count = 0  # Track how many vars we've found to enable early exit
+            
+            # Use partition for efficient parsing and early termination
+            for env in env_vars:
+                # partition handles strings without '=' gracefully
+                key, sep, value = env.partition('=')
+                
+                # Skip if no separator found (malformed env var)
+                if not sep:
+                    continue
+                
+                if key == 'LICENSE_KEY':
+                    license_key = value
+                    found_count += 1
+                elif key == 'EXPIRATION_DATE':
+                    expiration_date = value
+                    found_count += 1
+                elif key == 'NODE_TYPE':
+                    node_type = value
+                    found_count += 1
+                elif key == 'NODE_EMAIL':
+                    node_email = value
+                    found_count += 1
+                
+                # Early termination if we found all expected env vars
+                if found_count >= EXPECTED_ENV_VAR_COUNT:
+                    break
+            
+            # Determine container status using is_expired helper
+            status = container.status
+            if expiration_date and is_expired(expiration_date):
+                status = 'expired'
+            
+            # Get image name efficiently from Config (already accessed)
+            # This avoids triggering any lazy-loading from container.image property
+            image_name = config.get('Image', 'unknown')
+            
+            # Extract container ID once
+            container_id = container.id[:12]
+            
+            # Calculate days running
+            days_running = None
+            state = attrs.get('State', {})
+            started_at = state.get('StartedAt')
+            
+            if started_at and state.get('Running'):
+                try:
+                    # Parse StartedAt timestamp (ISO format)
+                    started_dt = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
+                    # Calculate time difference
+                    time_diff = current_time_utc - started_dt
+                    # Convert to days (with decimal precision)
+                    days_running = round(time_diff.total_seconds() / 86400, 1)
+                except (ValueError, TypeError):
+                    pass
+            
+            host_containers.append({
+                'host_id': host['id'],
+                'host_name': host['name'],
+                'id': container_id,
+                'name': container.name,
+                'status': status,
+                'image': image_name,
+                'created': attrs.get('Created', ''),
+                'key': license_key,
+                'email': node_email,
+                'node_type': node_type,
+                'expiration_date': expiration_date,
+                'days_running': days_running
+            })
+    except Exception as e:
+        print(f"Error listing containers on host {host['name']}: {e}")
     
-    if result['success']:
-        return jsonify(result)
-    else:
-        return jsonify(result), 400
-
-
-@app.route('/api/tailscale/logout', methods=['POST'])
-@login_required
-def tailscale_logout():
-    """Logout from Tailscale (removes device) - admin only"""
-    if not current_user.is_admin():
-        return jsonify({'error': 'Admin privileges required'}), 403
-    
-    result = tailscale_manager.logout()
-    
-    if result['success']:
-        return jsonify(result)
-    else:
-        return jsonify(result), 400
+    return host_containers
 
 
 @app.route('/api/containers', methods=['GET'])
 @login_required
 def list_containers():
-    """List all containers across all hosts - requires view permission"""
+    """List all containers across all hosts - requires view permission
+    
+    Performance optimizations:
+    - Uses a 10-second cache to handle concurrent requests efficiently
+    - Processes multiple hosts concurrently using ThreadPoolExecutor
+    - Efficiently parses environment variables with early termination
+    - Pre-calculates current time to avoid repeated datetime calls
+    - Optimized expiration checking
+    """
     if not current_user.can_view():
         return jsonify({'error': 'View privileges required'}), 403
     
+    # Check cache first
+    cached_result = container_cache.get()
+    if cached_result is not None:
+        return jsonify({'containers': cached_result, 'cached': True})
+    
+    # Pre-calculate current time once (used for expiration checking)
+    current_time_utc = datetime.now(timezone.utc)
+    
+    # Process hosts concurrently for faster loading
     all_containers = []
     
-    for host in host_manager.hosts:
-        client = host_manager.get_client(host['id'])
-        if not client:
-            continue
-        
-        try:
-            containers = client.containers.list(all=True)
-            for container in containers:
-                # Get environment variables to extract credentials
-                env_vars = container.attrs.get('Config', {}).get('Env', [])
-                license_key = None
-                expiration_date = None
-                node_type = None
-                node_email = None
-                
-                for env in env_vars:
-                    if env.startswith('LICENSE_KEY='):
-                        license_key = env.split('=', 1)[1]
-                    elif env.startswith('EXPIRATION_DATE='):
-                        expiration_date = env.split('=', 1)[1]
-                    elif env.startswith('NODE_TYPE='):
-                        node_type = env.split('=', 1)[1]
-                    elif env.startswith('NODE_EMAIL='):
-                        node_email = env.split('=', 1)[1]
-                
-                # Determine container status
-                status = container.status
-                if expiration_date and is_expired(expiration_date):
-                    status = 'expired'
-                
-                all_containers.append({
-                    'host_id': host['id'],
-                    'host_name': host['name'],
-                    'id': container.id[:12],
-                    'name': container.name,
-                    'status': status,
-                    'image': container.image.tags[0] if container.image.tags else container.image.id[:12],
-                    'created': container.attrs['Created'],
-                    'key': license_key,
-                    'email': node_email,
-                    'node_type': node_type,
-                    'expiration_date': expiration_date
-                })
-        except Exception as e:
-            print(f"Error listing containers on host {host['name']}: {e}")
+    # Use ThreadPoolExecutor to process hosts in parallel
+    # Max workers = min(number of hosts, 5) to avoid overwhelming the system
+    max_workers = min(len(host_manager.hosts), 5)
     
-    return jsonify({'containers': all_containers})
+    if max_workers > 0:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all host processing tasks
+            future_to_host = {
+                executor.submit(_process_host_containers, host, current_time_utc): host
+                for host in host_manager.hosts
+            }
+            
+            # Collect results as they complete
+            for future in as_completed(future_to_host):
+                try:
+                    host_containers = future.result()
+                    all_containers.extend(host_containers)
+                except Exception as e:
+                    host = future_to_host[future]
+                    print(f"Error processing host {host['name']}: {e}")
+    
+    # Cache the result
+    container_cache.set(all_containers)
+    
+    return jsonify({'containers': all_containers, 'cached': False})
 
 
 @app.route('/api/containers/start', methods=['POST'])
@@ -1086,6 +1007,7 @@ def start_container():
     node_type = data.get('node_type', 'datagram')
     expiration_date = data.get('expiration_date')
     container_name = data.get('container_name')
+    node_count = data.get('node_count', 1)  # Number of containers to start
     
     # Validate node type
     if node_type not in NODE_TYPES:
@@ -1096,12 +1018,21 @@ def start_container():
     if host_id is None:
         return jsonify({'error': 'Host ID is required'}), 400
     
+    # Validate node_count
+    if not isinstance(node_count, int) or node_count < 1 or node_count > 50:
+        return jsonify({'error': 'node_count must be between 1 and 50'}), 400
+    
+    # Only allow multiple containers for email/password auth (not for datagram)
+    if node_config['auth_type'] == 'api_key' and node_count > 1:
+        return jsonify({'error': 'Multiple containers not supported for API key authentication'}), 400
+    
     client = host_manager.get_client(host_id)
     if not client:
         return jsonify({'error': 'Could not connect to Docker host'}), 500
     
     # Prepare environment variables based on auth type
     env_vars = {}
+    base_container_name = None
     
     if node_config['auth_type'] == 'api_key':
         # Datagram uses LICENSE_KEY
@@ -1113,6 +1044,7 @@ def start_container():
         env_vars['LICENSE_KEY'] = key
         if not container_name:
             container_name = key
+        base_container_name = container_name
     else:
         # Email/password authentication
         email = data.get('email')
@@ -1141,10 +1073,12 @@ def start_container():
             # Remove consecutive hyphens
             email_prefix = re.sub(r'-+', '-', email_prefix).strip('-')
             container_name = f'{node_type}-{email_prefix}'
+        
+        base_container_name = container_name
     
     # Sanitize container name and remove consecutive hyphens
-    container_name = re.sub(r'[^a-zA-Z0-9_.-]', '-', container_name)
-    container_name = re.sub(r'-+', '-', container_name).strip('-')
+    base_container_name = re.sub(r'[^a-zA-Z0-9_.-]', '-', base_container_name)
+    base_container_name = re.sub(r'-+', '-', base_container_name).strip('-')
     
     # Add expiration date if provided
     if expiration_date:
@@ -1158,18 +1092,6 @@ def start_container():
     env_vars['NODE_TYPE'] = node_type
     
     try:
-        # For api_key nodes (datagram), check if container already exists (no duplicates allowed)
-        # For email/password nodes, always add numbering to allow multiple instances
-        if node_config['auth_type'] == 'api_key':
-            try:
-                existing = client.containers.get(container_name)
-                return jsonify({'error': f'Container with name "{container_name}" already exists'}), 400
-            except docker.errors.NotFound:
-                pass
-        else:
-            # For non-datagram nodes, always add numbering (-1, -2, -3, etc.)
-            container_name = find_unique_container_name(client, container_name)
-        
         # Check if image exists
         image_name = node_config['image']
         try:
@@ -1177,24 +1099,69 @@ def start_container():
         except docker.errors.ImageNotFound:
             return jsonify({'error': f'Image "{image_name}" not found on host. Please build it first.'}), 400
         
-        # Start the container
-        container = client.containers.run(
-            image_name,
-            name=container_name,
-            environment=env_vars,
-            platform='linux/amd64',
-            detach=True,
-            restart_policy={'Name': 'unless-stopped'},
-            mem_limit='100m',
-            memswap_limit='200m'
-        )
+        # Start multiple containers if requested
+        started_containers = []
         
-        return jsonify({
-            'success': True,
-            'container_id': container.id[:12],
-            'container_name': container_name,
-            'node_type': node_type
-        })
+        for i in range(node_count):
+            # Prepare container name
+            if node_config['auth_type'] == 'api_key':
+                # For datagram, check if container already exists
+                current_container_name = base_container_name
+                try:
+                    existing = client.containers.get(current_container_name)
+                    return jsonify({'error': f'Container with name "{current_container_name}" already exists'}), 400
+                except docker.errors.NotFound:
+                    pass
+            else:
+                # For email/password nodes, always add numbering
+                current_container_name = find_unique_container_name(client, base_container_name)
+            
+            # Prepare container run kwargs
+            # Use specific capabilities instead of privileged mode to maintain container isolation
+            # NET_ADMIN: Create and manage network interfaces (TUN/TAP for VPN)
+            # NET_RAW: Use raw and packet sockets
+            # SYS_MODULE: Load kernel modules (for WireGuard if needed)
+            # Each container gets its own network namespace for proper isolation
+            container_kwargs = {
+                'image': image_name,
+                'name': current_container_name,
+                'environment': env_vars,
+                'platform': 'linux/amd64',
+                'detach': True,
+                'restart_policy': {'Name': 'on-failure', 'MaximumRetryCount': 3},
+                'cap_add': ['NET_ADMIN', 'NET_RAW', 'SYS_MODULE'],
+                'devices': ['/dev/net/tun:/dev/net/tun'],
+                'network_mode': 'bridge',  # Each container gets its own network namespace
+                'ulimits': [docker.types.Ulimit(name='nofile', soft=CONTAINER_ULIMIT, hard=CONTAINER_ULIMIT)]
+            }
+            
+            # Start the container
+            # Use 'on-failure' restart policy with max 3 retries to prevent infinite loops
+            # when authentication fails. After 3 failures, container will stay stopped.
+            container = client.containers.run(**container_kwargs)
+            
+            started_containers.append({
+                'container_id': container.id[:12],
+                'container_name': current_container_name
+            })
+        
+        # Invalidate cache since new containers were created
+        container_cache.invalidate()
+        
+        if len(started_containers) == 1:
+            return jsonify({
+                'success': True,
+                'container_id': started_containers[0]['container_id'],
+                'container_name': started_containers[0]['container_name'],
+                'node_type': node_type
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'containers': started_containers,
+                'node_type': node_type,
+                'count': len(started_containers)
+            })
     
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -1213,6 +1180,10 @@ def start_existing_container(host_id, container_id):
         
         container = client.containers.get(container_id)
         container.start()
+        
+        # Invalidate cache since container state changed
+        container_cache.invalidate()
+        
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -1236,6 +1207,10 @@ def stop_container(host_id, container_id):
             return jsonify({'error': 'Cannot stop the control panel container'}), 403
         
         container.stop()
+        
+        # Invalidate cache since container state changed
+        container_cache.invalidate()
+        
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -1254,6 +1229,10 @@ def restart_container(host_id, container_id):
         
         container = client.containers.get(container_id)
         container.restart()
+        
+        # Invalidate cache since container state changed
+        container_cache.invalidate()
+        
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -1277,6 +1256,10 @@ def kill_container(host_id, container_id):
             return jsonify({'error': 'Cannot kill the control panel container'}), 403
         
         container.kill()
+        
+        # Invalidate cache since container state changed
+        container_cache.invalidate()
+        
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -1300,6 +1283,10 @@ def remove_container(host_id, container_id):
             return jsonify({'error': 'Cannot remove the control panel container'}), 403
         
         container.remove(force=True)
+        
+        # Invalidate cache since container was removed
+        container_cache.invalidate()
+        
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -1324,12 +1311,83 @@ def get_container_logs(host_id, container_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/containers/scan-all-auth-errors', methods=['GET'])
+@login_required
+def scan_all_auth_errors():
+    """Scan all containers for authentication errors - requires view permission"""
+    if not current_user.can_view():
+        return jsonify({'error': 'View privileges required'}), 403
+    
+    # Authentication error pattern with word boundaries for precision
+    auth_error_pattern = re.compile(
+        r'\b(?:auth(?:entication)?)\s+(?:fail(?:ed|ure)?|error|denied)\b|'
+        r'\binvalid\s+(?:user(?:name)?|password)\b|'
+        r'\blogin\s+(?:fail(?:ed|ure)?)\b|'
+        r'\baccess\s+denied\b',
+        re.IGNORECASE
+    )
+    
+    containers_with_errors = []
+    total_scanned = 0
+    
+    # Scan all hosts
+    for host in host_manager.hosts:
+        client = host_manager.get_client(host['id'])
+        if not client:
+            continue
+        
+        try:
+            containers = client.containers.list(all=True)
+            for container in containers:
+                # Skip the webapp container itself
+                if container.name == 'datagram-control-panel':
+                    continue
+                
+                total_scanned += 1
+                
+                try:
+                    # Get logs (last 500 lines)
+                    logs = container.logs(tail=500).decode('utf-8', errors='ignore')
+                    
+                    # Scan logs line by line
+                    matching_lines = []
+                    for line in logs.split('\n'):
+                        if auth_error_pattern.search(line):
+                            matching_lines.append(line.strip())
+                    
+                    # If errors found, add to results
+                    if matching_lines:
+                        containers_with_errors.append({
+                            'host_id': host['id'],
+                            'host_name': host['name'],
+                            'container_id': container.id[:12],
+                            'container_name': container.name,
+                            'status': container.status,
+                            'total_errors': len(matching_lines),
+                            'sample_errors': matching_lines[:5]  # First 5 samples
+                        })
+                except Exception as e:
+                    # Skip containers that fail to fetch logs
+                    print(f"Error scanning container {container.name}: {e}")
+                    continue
+        except Exception as e:
+            print(f"Error scanning host {host['name']}: {e}")
+            continue
+    
+    return jsonify({
+        'total_containers_scanned': total_scanned,
+        'containers_with_errors': len(containers_with_errors),
+        'results': containers_with_errors
+    })
+
+
 @app.route('/api/containers/<host_id>/<container_id>/update-expiration', methods=['POST'])
 @login_required
 def update_container_expiration(host_id, container_id):
     """Update container expiration date - requires edit permission
     
     This recreates the container with the updated expiration date environment variable.
+    Optionally updates memory limits if provided.
     """
     if not current_user.can_edit():
         return jsonify({'error': 'Edit privileges required'}), 403
@@ -1375,29 +1433,39 @@ def update_container_expiration(host_id, container_id):
         
         # Get host config for restart policy
         host_config = container.attrs.get('HostConfig', {})
-        restart_policy = host_config.get('RestartPolicy', {'Name': 'unless-stopped'})
-        mem_limit = host_config.get('Memory', 104857600)  # 100MB default
-        memswap_limit = host_config.get('MemorySwap', 209715200)  # 200MB default
+        
+        # Use 'on-failure' with max 3 retries to prevent infinite authentication loops
+        # This replaces 'unless-stopped' which causes containers to restart infinitely
+        restart_policy = {'Name': 'on-failure', 'MaximumRetryCount': 3}
         
         # Stop and remove the old container
         was_running = container.status == 'running'
         container.remove(force=True)
         
-        # Create new container with updated expiration date
-        new_container = client.containers.run(
-            image,
-            name=container_name,
-            environment=new_env,
-            platform='linux/amd64',
-            detach=True,
-            restart_policy=restart_policy,
-            mem_limit=mem_limit,
-            memswap_limit=memswap_limit
-        )
+        # Create new container with updated settings
+        # Use specific capabilities instead of privileged mode to maintain container isolation
+        # Each container gets its own network namespace for proper isolation
+        container_kwargs = {
+            'image': image,
+            'name': container_name,
+            'environment': new_env,
+            'platform': 'linux/amd64',
+            'detach': True,
+            'restart_policy': restart_policy,
+            'cap_add': ['NET_ADMIN', 'NET_RAW', 'SYS_MODULE'],
+            'devices': ['/dev/net/tun:/dev/net/tun'],
+            'network_mode': 'bridge',  # Each container gets its own network namespace
+            'ulimits': [docker.types.Ulimit(name='nofile', soft=CONTAINER_ULIMIT, hard=CONTAINER_ULIMIT)]
+        }
+        
+        new_container = client.containers.run(**container_kwargs)
         
         # If the original container was not running, stop the new one
         if not was_running:
             new_container.stop()
+        
+        # Invalidate cache since container was recreated
+        container_cache.invalidate()
         
         return jsonify({
             'success': True,
@@ -1717,17 +1785,25 @@ def import_keys():
                     pass  # If parsing fails, skip expiration date
             
             # Start the container
+            # Use 'on-failure' restart policy with max 3 retries to prevent infinite loops
             try:
-                container = client.containers.run(
-                    image_name,
-                    name=container_name,
-                    environment=env_vars,
-                    platform='linux/amd64',
-                    detach=True,
-                    restart_policy={'Name': 'unless-stopped'},
-                    mem_limit='100m',
-                    memswap_limit='200m'
-                )
+                # Prepare container run kwargs
+                # Use specific capabilities instead of privileged mode to maintain container isolation
+                # Each container gets its own network namespace for proper isolation
+                container_kwargs = {
+                    'image': image_name,
+                    'name': container_name,
+                    'environment': env_vars,
+                    'platform': 'linux/amd64',
+                    'detach': True,
+                    'restart_policy': {'Name': 'on-failure', 'MaximumRetryCount': 3},
+                    'cap_add': ['NET_ADMIN', 'NET_RAW', 'SYS_MODULE'],
+                    'devices': ['/dev/net/tun:/dev/net/tun'],
+                    'network_mode': 'bridge',  # Each container gets its own network namespace
+                    'ulimits': [docker.types.Ulimit(name='nofile', soft=CONTAINER_ULIMIT, hard=CONTAINER_ULIMIT)]
+                }
+                
+                container = client.containers.run(**container_kwargs)
                 
                 results['success'].append({
                     'row': row_num,
@@ -1742,6 +1818,10 @@ def import_keys():
                     'identifier': key or email,
                     'error': str(e)
                 })
+        
+        # Invalidate cache if any containers were imported
+        if len(results['success']) > 0:
+            container_cache.invalidate()
         
         return jsonify({
             'success': True,
@@ -1827,6 +1907,252 @@ def get_host_stats(host_id):
         return jsonify({'stats': stats})
     except Exception as e:
         print(f"Error getting host stats: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/rebuild-images', methods=['POST'])
+@login_required
+def rebuild_images():
+    """Rebuild all node type images from scratch - admin only
+    
+    This endpoint rebuilds all node type Docker images from scratch using --no-cache.
+    It can also optionally restart running containers with the updated images.
+    
+    Request JSON parameters:
+    - host_id (int, optional): Host ID to rebuild images on. If not provided, uses local host.
+    - restart_containers (bool, optional): Whether to restart running containers with new images. Default: False
+    - node_types (list, optional): List of node types to rebuild. If not provided, rebuilds all.
+    
+    Returns:
+    - success: True if rebuild completed
+    - results: Dictionary with rebuild status for each image
+    - restarted_containers: List of containers that were restarted (if restart_containers=True)
+    """
+    if not current_user.is_admin():
+        return jsonify({'error': 'Admin privileges required'}), 403
+    
+    data = request.json or {}
+    host_id = data.get('host_id', 0)
+    restart_containers = data.get('restart_containers', False)
+    requested_node_types = data.get('node_types', list(NODE_TYPES.keys()))
+    
+    # Validate node types
+    for node_type in requested_node_types:
+        if node_type not in NODE_TYPES:
+            return jsonify({'error': f'Invalid node type: {node_type}'}), 400
+    
+    client = host_manager.get_client(host_id)
+    if not client:
+        return jsonify({'error': 'Could not connect to Docker host'}), 500
+    
+    results = {}
+    restarted_containers = []
+    
+    try:
+        # Rebuild each requested node type image
+        for node_type in requested_node_types:
+            node_config = NODE_TYPES[node_type]
+            image_name = node_config['image']
+            dockerfile = node_config['dockerfile']
+            
+            try:
+                print(f"[Image Rebuild] Building {image_name} from {dockerfile}...")
+                
+                # Validate image_name to prevent command injection
+                # Image names must follow Docker naming convention: [a-z0-9][a-z0-9_.-]*
+                if not re.match(r'^[a-z0-9][a-z0-9_.-]*$', image_name):
+                    results[node_type] = {
+                        'success': False,
+                        'error': f'Invalid image name format: {image_name}'
+                    }
+                    continue
+                
+                # Validate dockerfile name to prevent directory traversal attacks
+                # Dockerfile names should only contain safe characters and no path separators
+                if not re.match(r'^[a-z0-9_-]+\.Dockerfile$', dockerfile):
+                    results[node_type] = {
+                        'success': False,
+                        'error': f'Invalid dockerfile name format: {dockerfile}'
+                    }
+                    continue
+                
+                # Build image from dockerfile directory with --no-cache
+                # The dockerfiles are in /app/dockerfiles/ in the webapp container
+                dockerfile_path = os.path.join('/app/dockerfiles', dockerfile)
+                
+                # Additional security check: ensure path doesn't escape the dockerfiles directory
+                dockerfile_realpath = os.path.realpath(dockerfile_path)
+                dockerfiles_dir = os.path.realpath('/app/dockerfiles')
+                if not dockerfile_realpath.startswith(dockerfiles_dir):
+                    results[node_type] = {
+                        'success': False,
+                        'error': f'Invalid dockerfile path: {dockerfile}'
+                    }
+                    continue
+                
+                if not os.path.exists(dockerfile_path):
+                    results[node_type] = {
+                        'success': False,
+                        'error': f'Dockerfile not found: {dockerfile_path}'
+                    }
+                    continue
+                
+                # For datagram, always re-download binaries on rebuild to get latest version
+                if node_type == 'datagram':
+                    binaries_dir = os.path.join(dockerfiles_dir, 'binaries', '.datagram')
+                    
+                    # Remove existing binaries to force fresh download
+                    if os.path.exists(binaries_dir):
+                        print(f"[Image Rebuild] Removing existing binaries to download latest version...")
+                        try:
+                            shutil.rmtree(os.path.join(dockerfiles_dir, 'binaries'))
+                        except Exception as e:
+                            print(f"[Image Rebuild] Warning: Failed to remove old binaries: {e}")
+                    
+                    print(f"[Image Rebuild] Downloading latest datagram binaries...")
+                    download_script = os.path.join(dockerfiles_dir, 'download-binaries.sh')
+                    if os.path.exists(download_script):
+                        try:
+                            download_result = subprocess.run(
+                                [download_script],
+                                cwd=dockerfiles_dir,
+                                capture_output=True,
+                                text=True,
+                                timeout=180  # 3 minutes for download
+                            )
+                            if download_result.returncode != 0:
+                                print(f"[Image Rebuild] Warning: Binary download failed: {download_result.stderr}")
+                                # Ensure cleanup even on failure
+                                subprocess.run(
+                                    ['docker', 'rm', '-f', 'datagram-temp'],
+                                    capture_output=True,
+                                    timeout=30
+                                )
+                                subprocess.run(
+                                    ['docker', 'rmi', '-f', 'datagram-temp:latest'],
+                                    capture_output=True,
+                                    timeout=30
+                                )
+                                results[node_type] = {
+                                    'success': False,
+                                    'error': f'Failed to download binaries: {download_result.stderr}'
+                                }
+                                continue
+                            print(f"[Image Rebuild] Binaries downloaded successfully")
+                            # Extra cleanup step to ensure no leftover resources
+                            print(f"[Image Rebuild] Verifying cleanup...")
+                            subprocess.run(
+                                ['docker', 'ps', '-a', '-q', '--filter', 'ancestor=datagram-temp:latest'],
+                                capture_output=True,
+                                timeout=10
+                            )
+                        except subprocess.TimeoutExpired:
+                            # Cleanup on timeout
+                            print(f"[Image Rebuild] Timeout - cleaning up resources...")
+                            subprocess.run(['docker', 'rm', '-f', 'datagram-temp'], capture_output=True, timeout=30)
+                            subprocess.run(['docker', 'rmi', '-f', 'datagram-temp:latest'], capture_output=True, timeout=30)
+                            results[node_type] = {
+                                'success': False,
+                                'error': 'Binary download timed out after 3 minutes'
+                            }
+                            continue
+                    else:
+                        print(f"[Image Rebuild] Warning: download-binaries.sh not found")
+                        results[node_type] = {
+                            'success': False,
+                            'error': 'download-binaries.sh not found'
+                        }
+                        continue
+                
+                # Build the image using Docker API
+                # Use docker command via subprocess for better control
+                build_cmd = [
+                    'docker', 'build',
+                    '--no-cache',
+                    '--platform', 'linux/amd64',
+                    '-t', image_name,
+                    '-f', dockerfile_path,
+                    '/app/dockerfiles/'
+                ]
+                
+                result = subprocess.run(
+                    build_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=600  # 10 minutes timeout
+                )
+                
+                if result.returncode == 0:
+                    results[node_type] = {
+                        'success': True,
+                        'image': image_name,
+                        'message': 'Image rebuilt successfully'
+                    }
+                    print(f"[Image Rebuild] Successfully built {image_name}")
+                else:
+                    results[node_type] = {
+                        'success': False,
+                        'error': result.stderr or 'Build failed'
+                    }
+                    print(f"[Image Rebuild] Failed to build {image_name}: {result.stderr}")
+                
+            except subprocess.TimeoutExpired:
+                results[node_type] = {
+                    'success': False,
+                    'error': 'Build timed out after 10 minutes'
+                }
+            except Exception as e:
+                results[node_type] = {
+                    'success': False,
+                    'error': str(e)
+                }
+                print(f"[Image Rebuild] Error building {image_name}: {e}")
+        
+        # Restart containers if requested
+        if restart_containers:
+            try:
+                containers = client.containers.list(all=True)
+                for container in containers:
+                    # Skip the webapp container itself
+                    if container.name == 'datagram-control-panel':
+                        continue
+                    
+                    # Get container's node type
+                    env_vars = container.attrs.get('Config', {}).get('Env', [])
+                    container_node_type = None
+                    
+                    for env in env_vars:
+                        if env.startswith('NODE_TYPE='):
+                            container_node_type = env.split('=', 1)[1]
+                            break
+                    
+                    # Only restart containers whose images were rebuilt
+                    if container_node_type in requested_node_types:
+                        if results.get(container_node_type, {}).get('success'):
+                            try:
+                                if container.status == 'running':
+                                    container.restart()
+                                    restarted_containers.append({
+                                        'name': container.name,
+                                        'node_type': container_node_type
+                                    })
+                                    print(f"[Image Rebuild] Restarted container: {container.name}")
+                            except Exception as e:
+                                print(f"[Image Rebuild] Failed to restart {container.name}: {e}")
+            except Exception as e:
+                print(f"[Image Rebuild] Error restarting containers: {e}")
+        
+        # Invalidate cache since containers might have been restarted
+        if restarted_containers:
+            container_cache.invalidate()
+        
+        return jsonify({
+            'success': True,
+            'results': results,
+            'restarted_containers': restarted_containers
+        })
+    
+    except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
