@@ -22,7 +22,13 @@ RUN curl -fsSL \
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-WORKDIR /root
+# Create non-root user for running the container
+RUN addgroup -g 1000 nodeuser && \
+    adduser -D -u 1000 -G nodeuser nodeuser
+
+# Switch to non-root user
+USER nodeuser
+WORKDIR /home/nodeuser
 
 # Health check - verify datagram conference process is running
 HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
