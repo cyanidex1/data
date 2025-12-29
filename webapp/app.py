@@ -1116,18 +1116,6 @@ def start_container():
                 # For email/password nodes, always add numbering
                 current_container_name = find_unique_container_name(client, base_container_name)
             
-            # Generate a unique MAC address for this container based on container name
-            # This ensures complete network isolation and helps services distinguish between containers
-            # MAC address format: 02:42:ac:xx:xx:xx (Docker's default range)
-            import hashlib
-            mac_hash = hashlib.md5(current_container_name.encode()).hexdigest()[:4]
-            mac_addr = f"02:42:ac:11:{mac_hash[:2]}:{mac_hash[2:4]}"
-            
-            # Create a unique volume for this container's .datagram directory
-            # This ensures each container has its own VPN/Conference CLI configuration
-            # preventing conflicts when multiple containers run with different keys
-            datagram_volume = f"{current_container_name}-datagram-data"
-            
             # Prepare container run kwargs
             # Use specific capabilities instead of privileged mode to maintain container isolation
             # NET_ADMIN: Create and manage network interfaces (TUN/TAP for VPN)
@@ -1137,8 +1125,6 @@ def start_container():
             container_kwargs = {
                 'image': image_name,
                 'name': current_container_name,
-                'hostname': current_container_name,
-                'mac_address': mac_addr,
                 'environment': env_vars,
                 'platform': 'linux/amd64',
                 'detach': True,
@@ -1146,7 +1132,6 @@ def start_container():
                 'cap_add': ['NET_ADMIN', 'NET_RAW', 'SYS_MODULE'],
                 'devices': ['/dev/net/tun:/dev/net/tun'],
                 'network_mode': 'bridge',  # Each container gets its own network namespace
-                'volumes': {datagram_volume: {'bind': '/root/.datagram', 'mode': 'rw'}},
                 'ulimits': [docker.types.Ulimit(name='nofile', soft=CONTAINER_ULIMIT, hard=CONTAINER_ULIMIT)]
             }
             

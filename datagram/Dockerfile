@@ -14,9 +14,11 @@ RUN curl -fsSL \
   -o /usr/local/bin/datagram && \
   chmod +x /usr/local/bin/datagram
 
-# Note: We do NOT copy binaries/.datagram to the image
-# Each container will download VPN and Conference CLI binaries on first run
-# This is stored in the per-container volume mounted at /root/.datagram
+# Copy pre-downloaded VPN and Conference CLI binaries
+# These binaries are extracted from a privileged container run by download-binaries.sh
+# IMPORTANT: Run ./download-binaries.sh BEFORE building this image
+# If binaries don't exist, the build will fail with a clear error message
+COPY binaries/.datagram /root/.datagram
 
 # Copy entrypoint script
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
